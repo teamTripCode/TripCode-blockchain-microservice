@@ -58,80 +58,87 @@ export class CryptoUtils {
     }
 
     /**
-     * Descifra los datos con la clave privada del usuario.
-     * @param {string} encryptedData - Los datos cifrados en formato Base64.
-     * @param {crypto.KeyObject} privateKey - La clave privada del usuario.
-     * @returns {any} - Los datos descifrados.
-     */
+ * Descifra los datos con la clave privada del usuario.
+ * @param {string} encryptedData - Los datos cifrados en formato Base64.
+ * @param {crypto.KeyObject} privateKey - La clave privada del usuario.
+ * @returns {any} - Los datos descifrados.
+ */
     static decryptData(encryptedData: string, privateKey: crypto.KeyObject): any {
         try {
             const buffer = Buffer.from(encryptedData, 'base64');
 
-            // Extract components from buffer
+            // Extraer componentes del buffer
             const ephemeralPublicKey = buffer.subarray(0, 65);
             const iv = buffer.subarray(65, 81);
             const authTag = buffer.subarray(81, 97);
             const encrypted = buffer.subarray(97);
 
-            // Create ECDH instance
+            // Crear instancia de ECDH
             const ecdh = crypto.createECDH('secp256k1');
 
-            // Extract raw private key
+            // Extraer clave privada en formato PEM
             const rawPrivateKey = privateKey.export({
-                format: 'der',
-                type: 'pkcs8'
-            }).subarray(-32); // Extract last 32 bytes which contain the actual key
+                format: 'pem',
+                type: 'pkcs8',
+            });
 
-            ecdh.setPrivateKey(rawPrivateKey);
+            // Convertir clave privada PEM a formato DER y obtener últimos 32 bytes
+            const privateKeyPem = rawPrivateKey.toString('utf8'); // Asegurarse de que es string
+            const privateKeyBuffer = Buffer.from(
+                privateKeyPem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\n/g, ''),
+                'base64'
+            ).subarray(-32);
 
-            // Process ephemeral public key
+            // Establecer clave privada en ECDH
+            ecdh.setPrivateKey(privateKeyBuffer);
+
+            // Crear clave pública efímera desde los datos extraídos
             const ephemeralPublicKeyObject = crypto.createPublicKey({
                 key: Buffer.concat([
                     Buffer.from('3056301006072a8648ce3d020106052b8104000a034200', 'hex'),
-                    ephemeralPublicKey
+                    ephemeralPublicKey,
                 ]),
                 format: 'der',
-                type: 'spki'
+                type: 'spki',
             });
 
-            // Compute shared secret
+            // Calcular secreto compartido
             const sharedSecret = ecdh.computeSecret(
                 ephemeralPublicKeyObject.export({ format: 'der', type: 'spki' }).subarray(-65)
             );
 
-            // Derive key using HKDF
+            // Derivar clave con HKDF
             const derivedKey = Buffer.from(crypto.hkdfSync(
                 'sha256',
                 sharedSecret,
                 Buffer.from('salt', 'utf8'),
                 Buffer.from('encryption', 'utf8'),
                 32
-            ));
+            ))
 
-            // Decrypt data
-            const decipher = crypto.createDecipheriv('aes-256-gcm', derivedKey, iv, {
-                authTagLength: 16
-            });
+            // Descifrar datos
+            const decipher = crypto.createDecipheriv('aes-256-gcm', derivedKey, iv);
             decipher.setAuthTag(authTag);
 
             let decryptedData = decipher.update(encrypted);
             decryptedData = Buffer.concat([decryptedData, decipher.final()]);
 
+            // Intentar parsear el resultado como JSON
             const decryptedString = decryptedData.toString('utf-8');
-
             try {
                 return JSON.parse(decryptedString);
             } catch {
-                return decryptedString;
+                return decryptedString; // Devolver como string si no es JSON
             }
-
         } catch (error) {
-            console.error('Decryption error:', error);
+            console.error('Error de descifrado:', error);
             if (error instanceof Error) {
-                throw new Error(`Failed to decrypt data: ${error.message}`);
+                throw new Error(`Fallo al descifrar los datos: ${error.message}`);
             } else {
-                throw new Error(`Failed to decrypt data: Unknown error`);
+                throw new Error('Fallo al descifrar los datos: Error desconocido');
             }
         }
     }
+
+
 }
