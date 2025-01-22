@@ -1,6 +1,5 @@
-import { Controller } from '@nestjs/common';
+import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ChainService } from './chain.service';
-import { MessagePattern, Payload } from '@nestjs/microservices';
 import * as crypto from 'crypto';
 
 interface NestedObject {
@@ -23,7 +22,8 @@ export class ChainController {
         private readonly chainService: ChainService,
     ) { }
 
-    @MessagePattern({ cmd: 'allBlocksInChain' })
+    // @MessagePattern({ cmd: 'allBlocksInChain' })
+    @Get()
     getBlocksInChain() {
         try {
             const data = {
@@ -36,8 +36,9 @@ export class ChainController {
         }
     }
 
-    @MessagePattern({ cmd: 'createBlock' })
-    createBlock(@Payload() payload: BodyBlock) {
+    // @MessagePattern({ cmd: 'createBlock' })
+    @Post()
+    createBlock(@Body() payload: BodyBlock) {
         try {
             if (payload.method === 'createBlock') {
                 return this.chainService.createBlock(payload.params);
@@ -49,8 +50,9 @@ export class ChainController {
         }
     }
 
-    @MessagePattern({ cmd: 'decryptDataInBlock' })
-    getDecryptedBlockData(@Payload() payload: { blockIndex: number; publicKey: string }) {
+    // @MessagePattern({ cmd: 'decryptDataInBlock' })
+    @Post('decrypt')
+    getDecryptedBlockData(@Body() payload: { blockIndex: number; publicKey: string }) {
         try {
             const publicKey = crypto.createPublicKey(payload.publicKey);
             return this.chainService.getDecryptedBlockData(payload.blockIndex, publicKey);
@@ -59,7 +61,8 @@ export class ChainController {
         }
     }
 
-    @MessagePattern({ cmd: 'validateChain' })
+    // @MessagePattern({ cmd: 'validateChain' })
+    @Post('validate')
     validateChain() {
         try {
             const isValid = this.chainService.isChainValid();
@@ -69,8 +72,9 @@ export class ChainController {
         }
     }
 
-    @MessagePattern({ cmd: 'getAccountBlocks' })
-    getAccountBlocks(@Payload() payload: { publicKey: string }) {
+    // @MessagePattern({ cmd: 'getAccountBlocks' })
+    @Post('account')
+    getAccountBlocks(@Body() payload: { publicKey: string }) {
         try {
             const blocks = this.chainService.getAccountBlocks(payload.publicKey);
             return { success: true, data: blocks };
@@ -79,8 +83,9 @@ export class ChainController {
         }
     }
 
-    @MessagePattern({ cmd: 'createPrivateBlock' })
-    createPrivateBlock(@Payload() payload: { blockData: NestedObject; publicKeyString: string }) {
+    // @MessagePattern({ cmd: 'createPrivateBlock' })
+    @Post('private')
+    createPrivateBlock(@Body() payload: { blockData: NestedObject; publicKeyString: string }) {
         try {
             const newBlock = this.chainService.createPrivateBlock(payload.blockData, payload.publicKeyString);
             return { success: true, data: newBlock };
