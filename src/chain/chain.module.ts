@@ -9,7 +9,7 @@ import { ConsensusService } from 'src/consensus/consensus.service';
 @Module({
   imports: [forwardRef(() => AccountModule), ConsensusModule],
   controllers: [ChainController],
-  providers: [ChainService, ChainGateway, ConsensusService],
+  providers: [ChainService, ChainGateway],
   exports: [ChainService]
 })
 export class ChainModule {}

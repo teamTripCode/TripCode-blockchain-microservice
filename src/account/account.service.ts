@@ -27,6 +27,7 @@ export class AccountService {
         name: user.name,  // User's name.
         email: user.email,  // User's email.
         publicKey: user.getAccountData().publicKey,  // The user's public key in PEM format.
+        balances: user.balances, // Saldos de todas las criptomonedas.
       }));
 
       return {
@@ -52,28 +53,30 @@ export class AccountService {
   createAccount(data: CreateAccountDto) {
     try {
       if (!data.name || !data.email) {
-        throw new Error('Name and email are required to create an account');  // Throw an error if name or email are missing.
+        throw new Error('Name and email are required to create an account');
       }
 
-      const user = new User(data.name, data.email);  // Create a new user instance.
+      const user = new User(data.name, data.email);
+      this.users[user.accountHash] = user; // Almacenar el usuario
 
-      this.users[user.accountHash] = user;  // Store the user in the users' record.
-
-      const accountData = user.getAccountData();  // Retrieve the user's account data.
+      const accountData = user.getAccountData();
+      console.log('Usuario creado:', user); // Depuración
+      console.log('Clave pública del usuario:', accountData.publicKey); // Depuración
 
       return {
         message: 'Account created successfully',
         accountHash: user.accountHash,
-        publicKey: accountData.publicKey,  // Return public key in PEM format.
+        publicKey: accountData.publicKey,
         name: user.name,
         email: user.email,
+        balances: user.balances,
       };
     } catch (error) {
       if (error instanceof Error) {
         return {
           success: false,
-          error: error.message
-        };  // Return error message if caught.
+          error: error.message,
+        };
       }
     }
   }
@@ -176,8 +179,99 @@ export class AccountService {
    * @param publicKey String representation of the user's public key.
    * @returns The user object if found, otherwise null.
    */
-  getAccount(publicKey: string): User | null {
-    const user = Object.values(this.users).find(user => user.publicKey.export({ type: 'spki', format: 'pem' }) === publicKey);
+  getAccount(publicKeyPem: string): User | null {
+    console.log('Buscando usuario con publicKeyPem:', publicKeyPem); // Depuración
+    const user = Object.values(this.users).find(user => {
+      const userPublicKeyPem = user.publicKey.export({
+        type: 'spki',
+        format: 'pem',
+      }).toString();
+      console.log('Clave pública del usuario:', userPublicKeyPem); // Depuración
+      return userPublicKeyPem === publicKeyPem;
+    });
+    if (!user) {
+      console.error('Usuario no encontrado para la publicKeyPem:', publicKeyPem); // Depuración
+    }
     return user || null;
+  }
+
+  /**
+   * Actualizar el saldo de una criptomoneda específica.
+   * @param accountHash - Hash de la cuenta.
+   * @param currency - Nombre de la criptomoneda.
+   * @param amount - Cantidad a añadir o restar.
+   */
+  public updateBalance(accountHash: string, currency: string, amount: number): void {
+    const user = this.users[accountHash];
+    if (!user) throw new Error('Usuario no encontrado');
+
+    user.updateBalance(currency, amount);  // Actualizar el saldo.
+  }
+
+  /**
+   * Verificar el saldo de una criptomoneda específica.
+   * @param accountHash - Hash de la cuenta.
+   * @param currency - Nombre de la criptomoneda.
+   * @returns El saldo de la criptomoneda.
+   */
+  public getBalance(accountHash: string, currency: string): number {
+    const user = this.users[accountHash];
+    if (!user) throw new Error('Usuario no encontrado');
+
+    return user.getBalance(currency) || 0;  // Devolver 0 si la criptomoneda no existe.
+  }
+
+  /**
+   * Calcula las recompensas auto-escalables para el cliente, el dueño del negocio y la plataforma.
+   * @param amount - Valor de la transacción en USD.
+   * @returns Un objeto con las recompensas para cada participante.
+   */
+  calculateAutoScalableRewards(amount: number): { clientReward: number; ownerReward: number; platformReward: number } {
+    // Definir tasas base y factores de escala
+    const baseClientRate = 0.01; // 1% base para el cliente
+    const baseOwnerRate = 0.005; // 0.5% base para el dueño del negocio
+    const basePlatformRate = 0.005; // 0.5% base para la plataforma
+
+    // Función para calcular la tasa escalada
+    const calculateScaledRate = (baseRate: number, amount: number): number => {
+      // Usamos una función logarítmica para suavizar el crecimiento de la tasa
+      return baseRate * Math.log1p(amount); // log1p(x) = ln(1 + x)
+    };
+
+    // Calcular las tasas escaladas
+    const clientRate = calculateScaledRate(baseClientRate, amount);
+    const ownerRate = calculateScaledRate(baseOwnerRate, amount);
+    const platformRate = calculateScaledRate(basePlatformRate, amount);
+
+    // Calcular las recompensas
+    const clientReward = amount * clientRate;
+    const ownerReward = amount * ownerRate;
+    const platformReward = amount * platformRate;
+
+    return { clientReward, ownerReward, platformReward };
+  }
+
+  /**
+   * Verificar si el plan de recompensas está activado para una cuenta.
+   * @param accountHash - Hash de la cuenta.
+   * @returns Verdadero si el plan está activado, falso en caso contrario.
+   */
+  public hasRewardPlanEnabled(accountHash: string): boolean {
+    const user = this.users[accountHash];
+    if (!user) throw new Error('Usuario no encontrado');
+
+    return user.hasRewardPlanEnabled();  // Verificar el estado del plan de recompensas.
+  }
+
+  /**
+   * Activar o desactivar el plan de recompensas para una cuenta.
+   * @param accountHash - Hash de la cuenta.
+   * @param enabled - Estado del plan (true para activar, false para desactivar).
+   */
+  public setRewardPlanEnabled(accountHash: string, enabled: boolean): void {
+    const user = this.users[accountHash];
+    if (!user) throw new Error('Usuario no encontrado');
+
+    user.setRewardPlanEnabled(enabled);  // Actualizar el estado del plan de recompensas.
   }
 }

@@ -58,11 +58,11 @@ export class CryptoUtils {
     }
 
     /**
- * Descifra los datos con la clave privada del usuario.
- * @param {string} encryptedData - Los datos cifrados en formato Base64.
- * @param {crypto.KeyObject} privateKey - La clave privada del usuario.
- * @returns {any} - Los datos descifrados.
- */
+     * Descifra los datos con la clave privada del usuario.
+     * @param {string} encryptedData - Los datos cifrados en formato Base64.
+     * @param {crypto.KeyObject} privateKey - La clave privada del usuario.
+     * @returns {any} - Los datos descifrados.
+     */
     static decryptData(encryptedData: string, privateKey: crypto.KeyObject): any {
         try {
             const buffer = Buffer.from(encryptedData, 'base64');

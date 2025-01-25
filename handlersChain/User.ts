@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import { IUser } from 'types/userType';
+import { ApiKey, IUser } from 'types/userType';
 import { CryptoUtils } from './CryptoUtils';
 import { Injectable } from '@nestjs/common';
 
@@ -10,6 +10,10 @@ export class User implements IUser {
     public accountHash: string;
     public name: string;
     public email: string;
+    public balances: Record<string, number>;
+    public apiKeys: ApiKey[];
+    public rewardPlanEnabled: boolean;
+    public gasBalance: number;
 
     constructor(name: string, email: string) {
         try {
@@ -20,6 +24,11 @@ export class User implements IUser {
                 .update(name + email + Date.now().toString())
                 .digest('hex');
             console.log('Account hash generated:', this.accountHash);
+
+            this.balances = { tripcoin: 0 }; // Inicializar con Tripcoins
+            this.gasBalance = 0; // Inicio de el saldo de gas en 0
+            this.rewardPlanEnabled = false; // Por defecto, el plan de recompensas está desactivado
+            this.apiKeys = [];
 
             this.name = name;
             this.email = email;
@@ -36,7 +45,7 @@ export class User implements IUser {
                     type: 'pkcs8',
                     format: 'pem'
                 }
-            })
+            });
 
             console.log('Setting private key...');
             this.privateKey = crypto.createPrivateKey(keyPair.privateKey);
@@ -53,16 +62,35 @@ export class User implements IUser {
         }
     }
 
+    /**
+     * Añadir o actualizar el saldo de una criptomoneda.
+     * @param currency - Nombre de la criptomoneda.
+     * @param amount - Cantidad a añadir o restar.
+     */
+    public updateBalance(currency: string, amount: number): void {
+        if (!this.balances[currency]) {
+            this.balances[currency] = 0;  // Inicializar el saldo si la criptomoneda no existe.
+        }
+        this.balances[currency] += amount;  // Actualizar el saldo.
+    }
+
+    /**
+     * Obtener el saldo de una criptomoneda específica.
+     * @param currency - Nombre de la criptomoneda.
+     * @returns El saldo de la criptomoneda.
+     */
+    public getBalance(currency: string): number {
+        return this.balances[currency] || 0;  // Devolver 0 si la criptomoneda no existe.
+    }
+
     // Firmar datos con la clave privada
     signData(data: string): string {
         try {
-            //console.log('Signing data...');
             const sign = crypto.createSign('SHA256');
             sign.update(data);
             sign.end();
 
             const signature = sign.sign(this.privateKey);
-            //console.log('Data signed successfully:', signature.toString('hex'));
             return signature.toString('hex');
         } catch (error) {
             if (error instanceof Error) {
@@ -77,7 +105,6 @@ export class User implements IUser {
     // Verificar firma usando la clave pública
     verifyData(data: string, signature: string): boolean {
         try {
-            //console.log('Verifying signature...');
             const verify = crypto.createVerify('SHA256');
             verify.update(data);
             verify.end();
@@ -86,7 +113,7 @@ export class User implements IUser {
                 this.publicKey,
                 Buffer.from(signature, 'hex')
             );
-            //console.log('Signature verification result:', isValid);
+
             return isValid;
         } catch (error) {
             if (error instanceof Error) {
@@ -101,12 +128,10 @@ export class User implements IUser {
     // Obtener datos de la cuenta - retorna la clave pública en formato PEM
     getAccountData(): { publicKey: string } {
         try {
-            // console.log('Exporting public key in PEM format...');
             const publicKeyPem = this.publicKey.export({
                 type: 'spki',
                 format: 'pem',
             }).toString();
-            // console.log('Public key exported:', publicKeyPem);
             return {
                 publicKey: publicKeyPem,
             };
@@ -131,5 +156,88 @@ export class User implements IUser {
             console.error('Key pair encryption validation failed:', error);
             return false;
         }
+    }
+
+    /**
+     * Añade una nueva API Key al usuario.
+     * @param apiKey - API Key a añadir.
+     * @param description - Descripción de la API Key (opcional).
+     * @param expiresAt - Fecha de expiración (opcional).
+     * @param permissions - Permisos asociados a la API Key.
+     */
+    addApiKey(apiKey: string, description?: string, expiresAt?: Date, permissions: string[] = []): void {
+        const newApiKey: ApiKey = {
+            key: apiKey,
+            createdAt: new Date(),
+            expiresAt,
+            description,
+            permissions,
+            isActive: true,
+        };
+        this.apiKeys.push(newApiKey);
+    }
+
+    /**
+     * Elimina una API Key del usuario.
+     * @param apiKey - API Key a eliminar.
+     */
+    removeApiKey(apiKey: string): void {
+        this.apiKeys = this.apiKeys.filter((key) => key.key !== apiKey);
+    }
+
+    /**
+     * Verifica si una API Key pertenece al usuario y está activa.
+     * @param apiKey - API Key a verificar.
+     * @returns Verdadero si la API Key es válida y está activa.
+     */
+    hasApiKey(apiKey: string): boolean {
+        const key = this.apiKeys.find((k) => k.key === apiKey);
+        return key ? key.isActive && (!key.expiresAt || key.expiresAt > new Date()) : false;
+    }
+
+    /**
+     * Desactiva una API Key.
+     * @param apiKey - API Key a desactivar.
+     */
+    deactivateApiKey(apiKey: string): void {
+        const key = this.apiKeys.find((k) => k.key === apiKey);
+        if (key) {
+            key.isActive = false;
+        }
+    }
+
+    /**
+     * Activar o desactivar el plan de recompensas.
+     * @param enabled - Estado del plan (true para activar, false para desactivar).
+     */
+    public setRewardPlanEnabled(enabled: boolean): void {
+        this.rewardPlanEnabled = enabled;
+    }
+
+    /**
+     * Verificar si el plan de recompensas está activado.
+     * @returns Verdadero si el plan está activado, falso en caso contrario.
+     */
+    public hasRewardPlanEnabled(): boolean {
+        return this.rewardPlanEnabled;
+    }
+
+    /**
+     * Añadir o restar gas al saldo del usuario.
+     * @param amount - Cantidad de gas a añadir o restar.
+     */
+    public updateGasBalance(amount: number): void {
+        if (this.gasBalance + amount < 0) {
+            throw new Error('Saldo de gas insuficiente');
+        }
+        this.gasBalance += amount;
+    }
+
+    /**
+     * Obtener el saldo de gas del usuario.
+     * @returns El saldo de gas.
+     */
+    public getGasBalance(): number {
+        return this.gasBalance;
     }
 }

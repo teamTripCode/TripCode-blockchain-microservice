@@ -1,28 +1,16 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { ChainService } from './chain.service';
 import * as crypto from 'crypto';
-
-interface NestedObject {
-    [key: string]: string | number | boolean | null | NestedObject | NestedObject[];
-}
-
-type ParamProp = [
-    NestedObject,
-    string
-]
-
-interface BodyBlock {
-    method: string;
-    params: ParamProp
-}
+import { JwtAuthGuard } from 'src/auth/auth.guard';
+import { BodyBlock, NestedObject, MethodsBlock, SmartContractBlockData, RewardBlockData, AuditLogBlockData, ExchangeBlockData, UserRegistrationBlockData, GovernanceBlockData, FinancialTransactionBlockData, CriticalDataBlockData } from './dto/create-chain.dto';
 
 @Controller('chain')
+@UseGuards(JwtAuthGuard)
 export class ChainController {
     constructor(
         private readonly chainService: ChainService,
     ) { }
 
-    // @MessagePattern({ cmd: 'allBlocksInChain' })
     @Get()
     getBlocksInChain() {
         try {
@@ -36,21 +24,36 @@ export class ChainController {
         }
     }
 
-    // @MessagePattern({ cmd: 'createBlock' })
     @Post()
-    createBlock(@Body() payload: BodyBlock) {
+    createBlock(@Body() payload: BodyBlock<any>) {
         try {
-            if (payload.method === 'createBlock') {
-                return this.chainService.createBlock(payload.params);
-            } else {
-                throw new Error('Unsupported method');
+            switch (payload.method) {
+                case 'createBlock':
+                    return this.chainService.createBlock(payload.params);
+                case 'createSmartContractBlock':
+                    return this.chainService.createBlock(payload.params as [SmartContractBlockData, string]);
+                case 'createRewardBlock':
+                    return this.chainService.createBlock(payload.params as [RewardBlockData, string]);
+                case 'createAuditLogBlock':
+                    return this.chainService.createBlock(payload.params as [AuditLogBlockData, string]);
+                case 'createExchangeBlock':
+                    return this.chainService.createBlock(payload.params as [ExchangeBlockData, string]);
+                case 'createUserRegistrationBlock':
+                    return this.chainService.createBlock(payload.params as [UserRegistrationBlockData, string]);
+                case 'createGovernanceBlock':
+                    return this.chainService.createBlock(payload.params as [GovernanceBlockData, string]);
+                case 'createFinancialTransactionBlock':
+                    return this.chainService.createBlock(payload.params as [FinancialTransactionBlockData, string]);
+                case 'createCriticalDataBlock':
+                    return this.chainService.createBlock(payload.params as [CriticalDataBlockData, string]);
+                default:
+                    throw new Error('Unsupported method');
             }
         } catch (error) {
             return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
         }
     }
 
-    // @MessagePattern({ cmd: 'decryptDataInBlock' })
     @Post('decrypt')
     getDecryptedBlockData(@Body() payload: { blockIndex: number; publicKey: string }) {
         try {
@@ -61,7 +64,6 @@ export class ChainController {
         }
     }
 
-    // @MessagePattern({ cmd: 'validateChain' })
     @Post('validate')
     validateChain() {
         try {
@@ -72,7 +74,6 @@ export class ChainController {
         }
     }
 
-    // @MessagePattern({ cmd: 'getAccountBlocks' })
     @Post('account')
     getAccountBlocks(@Body() payload: { publicKey: string }) {
         try {
@@ -83,7 +84,6 @@ export class ChainController {
         }
     }
 
-    // @MessagePattern({ cmd: 'createPrivateBlock' })
     @Post('private')
     createPrivateBlock(@Body() payload: { blockData: NestedObject; publicKeyString: string }) {
         try {

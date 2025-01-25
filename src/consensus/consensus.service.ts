@@ -6,7 +6,7 @@ export class ConsensusService {
   private readonly difficulty: number = 2; // Configuración de dificultad para PoW (ajustable)
   private readonly consensusAlgorithm: 'PoW' | 'PoS' = 'PoW'
 
-  constructor() { }
+  constructor() {}
 
   /**
    * Valida un bloque según el algoritmo de consenso (en este caso, PoW).
