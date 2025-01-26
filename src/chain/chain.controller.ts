@@ -1,8 +1,25 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import {
+    Body,
+    Controller,
+    Get,
+    Post,
+    UseGuards
+} from '@nestjs/common';
 import { ChainService } from './chain.service';
 import * as crypto from 'crypto';
 import { JwtAuthGuard } from 'src/auth/auth.guard';
-import { BodyBlock, NestedObject, MethodsBlock, SmartContractBlockData, RewardBlockData, AuditLogBlockData, ExchangeBlockData, UserRegistrationBlockData, GovernanceBlockData, FinancialTransactionBlockData, CriticalDataBlockData } from './dto/create-chain.dto';
+import {
+    BodyBlock,
+    NestedObject,
+    SmartContractBlockData,
+    RewardBlockData,
+    AuditLogBlockData,
+    ExchangeBlockData,
+    UserRegistrationBlockData,
+    GovernanceBlockData,
+    FinancialTransactionBlockData,
+    CriticalDataBlockData
+} from './dto/create-chain.dto';
 
 @Controller('chain')
 @UseGuards(JwtAuthGuard)

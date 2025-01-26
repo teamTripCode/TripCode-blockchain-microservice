@@ -16,8 +16,10 @@ export interface IBlock {
     hash: string;
     nonce: number;
     signature: string;  // Firma de la transacción.
+    validator: string;
     calculateHash(): string;
     mineBlock(difficulty: number): void;
+    forgeBlock(validator: string): void;
 }
 
 export interface IBlockchain {

@@ -1,11 +1,10 @@
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { IBlockchain, isBlockData, ITransaction, NestedObject, ParamProp, BodyBlock, MethodsBlock, SmartContractBlockData, RewardBlockData, AuditLogBlockData, ExchangeBlockData, UserRegistrationBlockData, GovernanceBlockData, FinancialTransactionBlockData, CriticalDataBlockData, BlockData } from './dto/create-chain.dto';
+import { IBlockchain, isBlockData, ITransaction, NestedObject, ParamProp, FinancialTransactionBlockData } from './dto/create-chain.dto';
 import { IBlock } from 'types/chainsType';
 import { CryptoUtils } from 'handlersChain/CryptoUtils';
 import { Block } from 'handlersChain/Block';
 import * as crypto from 'crypto';
 import { AccountService } from 'src/account/account.service';
-import { ChainGateway } from './chain.gateway';
 import { ConsensusService } from 'src/consensus/consensus.service';
 
 @Injectable()

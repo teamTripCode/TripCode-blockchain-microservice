@@ -11,8 +11,17 @@ export class SmartContractsService {
     creator: string;
     name: string;
     initialValue: number;
+    currentValue: number;
     maxSupply: number;
     currentSupply: number;
+    transactions: Array<{
+      type: 'buy' | 'sell';
+      buyer?: string;
+      seller?: string;
+      amount: number;
+      price: number;
+      timestamp: string;
+    }>;
   }> = {};
 
   constructor(
@@ -47,7 +56,12 @@ export class SmartContractsService {
    * @param currency - Nombre de la criptomoneda (por ejemplo, "tripcoin").
    * @returns Verdadero si la contribución fue exitosa.
    */
-  contributeToContract(contractId: string, participant: string, amount: number, currency: string): boolean {
+  contributeToContract(
+    contractId: string,
+    participant: string,
+    amount: number,
+    currency: string
+  ): boolean {
     const contract = this.contracts.find((c) => c.id === contractId);
     if (!contract || contract.isClosed) {
       throw new Error('Contrato no encontrado o ya cerrado');
@@ -112,8 +126,10 @@ export class SmartContractsService {
       creator,
       name,
       initialValue,
+      currentValue: initialValue,
       maxSupply,
       currentSupply: 0,
+      transactions: [],
     };
 
     return {
@@ -131,7 +147,11 @@ export class SmartContractsService {
   * @param recipient - Clave pública del destinatario de los tokens.
   * @returns Verdadero si la emisión fue exitosa.
   */
-  mintToken(tokenId: string, amount: number, recipient: string): boolean {
+  mintToken(
+    tokenId: string,
+    amount: number,
+    recipient: string
+  ): boolean {
     const token = this.tokens[tokenId];
     if (!token) {
       throw new Error('Token no encontrado');
@@ -178,7 +198,9 @@ export class SmartContractsService {
    * Verifica las condiciones del contrato y ejecuta las acciones correspondientes.
    * @param contract - Contrato a verificar.
    */
-  private checkConditions(contract: SmartContract): void {
+  private checkConditions(
+    contract: SmartContract
+  ): void {
     if (contract.isClosed) return;
 
     const conditionsMet = contract.conditions.every((condition) => condition(contract));
@@ -193,7 +215,9 @@ export class SmartContractsService {
    * @param contractId - ID del contrato.
    * @returns El contrato encontrado.
    */
-  getContract(contractId: string): SmartContract {
+  getContract(
+    contractId: string
+  ): SmartContract {
     const contract = this.contracts.find((c) => c.id === contractId);
     if (!contract) {
       throw new Error('Contrato no encontrado');
@@ -208,7 +232,11 @@ export class SmartContractsService {
    * @param creator - Clave pública del creador del contrato.
    * @throws ForbiddenException Si el creador no coincide con el creador del contrato.
    */
-  addCondition(contractId: string, condition: ContractCondition, creator: string): void {
+  addCondition(
+    contractId: string,
+    condition: ContractCondition,
+    creator: string
+  ): void {
     const contract = this.getContract(contractId);
 
     // Verificar que el creador del contrato sea el mismo que intenta agregar la condición
@@ -227,7 +255,11 @@ export class SmartContractsService {
    * @param creator - Clave pública del creador del contrato.
    * @throws ForbiddenException Si el creador no coincide con el creador del contrato.
    */
-  addAction(contractId: string, action: ContractAction, creator: string): void {
+  addAction(
+    contractId: string,
+    action: ContractAction,
+    creator: string
+  ): void {
     const contract = this.getContract(contractId);
 
     // Verificar que el creador del contrato sea el mismo que intenta agregar la acción
@@ -237,5 +269,115 @@ export class SmartContractsService {
 
     contract.actions.push(action);
     this.checkConditions(contract);
+  }
+
+  /**
+   * Compra tokens de una criptomoneda personalizada.
+   * @param tokenId - ID del token.
+   * @param buyer - Clave pública del comprador.
+   * @param amount - Cantidad de tokens a comprar.
+   * @returns Verdadero si la compra fue exitosa.
+   */
+  buyToken(
+    tokenId: string,
+    buyer: string,
+    amount: number
+  ): boolean {
+    const token = this.tokens[tokenId];
+    if (!token) throw new Error('Token no encontrado');
+
+    const buyerAccount = this.accountService.getAccount(buyer);
+    if (!buyerAccount) throw new Error('El comprador no tiene una cuenta válida');
+
+    const totalCost = token.currentValue * amount;
+
+    if (buyerAccount.getBalance('cop') < totalCost) throw new Error('El comprador no tiene suficientes fondos');
+
+    const creatorAccount = this.accountService.getAccount(token.creator);
+    if (!creatorAccount) throw new Error('El creador del token no tiene una cuenta válida');
+
+    buyerAccount.updateBalance('cop', -totalCost);
+    creatorAccount.updateBalance('cop', totalCost);
+
+    buyerAccount.updateBalance(token.name, amount);
+
+    token.transactions.push({
+      type: 'buy',
+      buyer,
+      amount,
+      price: token.currentValue,
+      timestamp: new Date().toISOString(),
+    });
+
+    return true;
+  }
+
+  /**
+   * Vende tokens de una criptomoneda personalizada.
+   * @param tokenId - ID del token.
+   * @param seller - Clave pública del vendedor.
+   * @param amount - Cantidad de tokens a vender.
+   * @returns Verdadero si la venta fue exitosa.
+   */
+  sellToken(
+    tokenId: string,
+    seller: string,
+    amount: number
+  ): boolean {
+    const token = this.tokens[tokenId];
+    if (!token) throw new Error('Token no encontrado');
+
+    // Verifica que el vendedor tenga una cuenta válida
+    const sellerAccount = this.accountService.getAccount(seller);
+    if (!sellerAccount) {
+      throw new Error('El vendedor no tiene una cuenta válida');
+    }
+
+    // Verifica que el vendedor tenga suficientes tokens
+    if (sellerAccount.getBalance(token.name) < amount) {
+      throw new Error('El vendedor no tiene suficientes tokens');
+    }
+
+    // Calcula el ingreso total en COP
+    const totalIncome = token.currentValue * amount;
+
+    // Transfiere los fondos al vendedor
+    sellerAccount.updateBalance('cop', totalIncome);
+
+    // Transfiere los tokens al creador del token (o quemarlos, según el caso)
+    const creatorAccount = this.accountService.getAccount(token.creator);
+    if (!creatorAccount) {
+      throw new Error('El creador del token no tiene una cuenta válida');
+    }
+    creatorAccount.updateBalance(token.name, amount);
+
+    // Ajusta el precio de la criptomoneda (disminuye debido a la oferta)
+    token.currentValue *= 0.95; // Disminuye un 5% por venta (ajustable)
+
+    // Registra la transacción
+    token.transactions.push({
+      type: 'sell',
+      seller,
+      amount,
+      price: token.currentValue,
+      timestamp: new Date().toISOString(),
+    });
+
+    return true;
+  }
+
+  /**
+   * Obtiene el precio actual de una criptomoneda personalizada.
+   * @param tokenId - ID del token.
+   * @returns El precio actual en COP.
+   */
+  getTokenCurrentValue(
+    tokenId: string
+  ): number {
+    const token = this.tokens[tokenId];
+    if (!token) {
+      throw new Error('Token no encontrado');
+    }
+    return token.currentValue;
   }
 }

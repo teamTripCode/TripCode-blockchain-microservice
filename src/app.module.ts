@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { GasModule } from './gas/gas.module';
 import { ConversionModule } from './conversion/conversion.module';
 import { ConfigModule } from '@nestjs/config';
+import { KycModule } from './kyc/kyc.module';
 
 @Module({
   imports: [
@@ -19,7 +20,8 @@ import { ConfigModule } from '@nestjs/config';
     SmartContractsModule,
     AuthModule,
     GasModule,
-    ConversionModule
+    ConversionModule,
+    KycModule
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -12,6 +12,7 @@ export class Block implements IBlock {
     hash: string;
     nonce: number;
     signature: string;
+    validator: string;
 
     /**
      * Creates a new Block.
@@ -20,13 +21,20 @@ export class Block implements IBlock {
      * @param transactions - The list of transactions in the block.
      * @param previousHash - The hash of the previous block.
      */
-    constructor(index: number, timestamp: string, transactions: ITransaction[], previousHash = '', signature: string) {
+    constructor(
+        index: number,
+        timestamp: string,
+        transactions: ITransaction[],
+        previousHash = '',
+        signature: string
+    ) {
         this.index = index;
         this.timestamp = timestamp;
         this.transactions = transactions;
         this.previousHash = previousHash;
         this.nonce = 0;
         this.signature = signature;
+        this.validator = '';
         this.hash = this.calculateHash()
     }
 
@@ -58,5 +66,11 @@ export class Block implements IBlock {
             this.hash = this.calculateHash();
         }
         console.log(`Block mined: ${this.hash}`);
+    }
+
+    forgeBlock(validator: string): void {
+        this.validator = validator;
+        this.hash = this.calculateHash();
+        console.log(`Block forged by: ${validator}`);
     }
 }
