@@ -1,16 +1,19 @@
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { ChainService } from 'src/chain/chain.service';
 import { User } from 'handlersChain/User';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { CryptoUtils } from 'handlersChain/CryptoUtils';
+import { PrismaService } from 'src/prisma/prisma.service';
+import * as crypto from 'crypto'
+import { SmartContractsService } from 'src/smart-contracts/smart-contracts.service';
 
 @Injectable()
 export class AccountService {
   public users: Record<string, User> = {}  // A record of all users with account hash as the key.
 
   constructor(
-    @Inject(forwardRef(() => ChainService))
-    private blockchain: ChainService  // Injecting the blockchain service to manage blocks and transactions.
+    private prisma: PrismaService,
+    @Inject(forwardRef(() => SmartContractsService))
+    private smartContract: SmartContractsService,
   ) { }
 
   /**
@@ -18,23 +21,22 @@ export class AccountService {
    * 
    * @returns A success message with the list of accounts and their details.
    */
-  getAllAccounts() {
+  async getAllAccounts() {
     try {
+      const accounts = await this.prisma.account.findMany({ include: { balances: true, ApiKey: true } });
       const accountCount = Object.keys(this.users).length;
-
-      const accounts = Object.values(this.users).map(user => ({
-        accountHash: user.accountHash,  // Unique hash of the user account.
-        name: user.name,  // User's name.
-        email: user.email,  // User's email.
-        publicKey: user.getAccountData().publicKey,  // The user's public key in PEM format.
-        balances: user.balances, // Saldos de todas las criptomonedas.
-      }));
 
       return {
         success: true,
         data: {
           count: accountCount,
-          accounts
+          accounts: accounts.map(account => ({
+            accountHash: account.accountHash,
+            name: account.name,
+            email: account.email,
+            publicKey: account.publicKey,
+            balances: account.balances,
+          })),
         }
       };
     } catch (error) {
@@ -50,7 +52,7 @@ export class AccountService {
    * @param data Data needed to create an account, including name and email.
    * @returns A success message with account details if creation is successful, otherwise an error message.
    */
-  createAccount(data: CreateAccountDto) {
+  async createAccount(data: CreateAccountDto) {
     try {
       if (!data.name || !data.email) {
         throw new Error('Name and email are required to create an account');
@@ -60,17 +62,36 @@ export class AccountService {
       this.users[user.accountHash] = user; // Almacenar el usuario
 
       const accountData = user.getAccountData();
-      console.log('Usuario creado:', user); // Depuración
-      console.log('Clave pública del usuario:', accountData.publicKey); // Depuración
+      // console.log('Usuario creado:', user); // Depuración
+      // console.log('Clave pública del usuario:', accountData.publicKey); // Depuración
+
+      const newAccount = await this.prisma.account.create({
+        data: {
+          accountHash: user.accountHash,
+          name: user.name,
+          email: user.email,
+          publicKey: accountData.publicKey,
+          privateKey: user.privateKey.export({ format: 'pem', type: 'pkcs8' }).toString(),
+          balances: {
+            create: [
+              {
+                currency: 'tripcoin',
+                amount: '0'
+              }
+            ]
+          },
+        },
+        include: { balances: true }
+      })
+
+      // console.log('Usuario creado:', newAccount); // Depuración
+      // console.log('Clave pública del usuario:', accountData.publicKey); // Depuración
 
       return {
-        message: 'Account created successfully',
-        accountHash: user.accountHash,
-        publicKey: accountData.publicKey,
-        name: user.name,
-        email: user.email,
-        balances: user.balances,
+        success: true,
+        data: newAccount
       };
+
     } catch (error) {
       if (error instanceof Error) {
         return {
@@ -87,73 +108,51 @@ export class AccountService {
    * @param accountHash Unique hash of the user's account.
    * @returns A list of blocks created by the user, along with additional details.
    */
-  blocksByAccount(accountHash: string) {
+  async blocksByAccount(accountHash: string) {
     try {
-      const user = this.users[accountHash];
+      const account = await this.prisma.account.findUnique({
+        where: { accountHash },
+        include: { Block: { include: { transactions: true } } },
+      });
 
-      if (!user) throw new Error('User not found');  // Throw an error if the user is not found.
-      if (!user.validateKeyPairWithEncryption()) throw new Error('Invalid user keys');  // Ensure the user has valid keys.
+      if (!account) throw new Error('User not found');
 
-      // Filter blocks where the user has a transaction in it with valid signature.
-      const userBlocks = this.blockchain.chain.filter(block => {
+      const user = new User(account.name, account.email);
+      user.privateKey = crypto.createPrivateKey(account.privateKey);
+      user.publicKey = crypto.createPublicKey(account.publicKey);
+
+      if (!user.validateKeyPairWithEncryption()) throw new Error('Invalid user keys');
+
+      const userBlocks = account.Block.filter(block => {
         return block.transactions.some(tx => {
-          if (!tx.signature || !tx.data) return false;  // Skip invalid transactions.
+          if (!tx.signature || !tx.data) return false;
 
           try {
-            console.log('Processing transaction:', {
-              signature: tx.signature.substring(0, 20) + '...',
-              dataLength: tx.data.length
-            });
-
-            // Attempt to decrypt the data.
-            const decryptedData = CryptoUtils.decryptData(tx.data as string, user.privateKey);
-            console.log('Successfully decrypted data type:', typeof decryptedData);
-
-            // Prepare decrypted data for verification.
+            const decryptedData = CryptoUtils.decryptData(tx.data, user.privateKey);
             const dataToVerify = typeof decryptedData === 'string'
               ? decryptedData
               : JSON.stringify(decryptedData);
 
-            console.log('Data prepared for verification:', {
-              length: dataToVerify.length,
-              preview: dataToVerify.substring(0, 50) + '...'
-            });
-
-            // Verify the signature.
             const signatureIsValid = user.verifyData(dataToVerify, tx.signature);
-            console.log('Signature verification result:', signatureIsValid);
-
-            if (!signatureIsValid) {
-              console.log('Invalid signature detected');
-            }
-
             return signatureIsValid;
-
           } catch (error) {
-            if (error instanceof Error) {
-              console.log(error.message);
-              return false;
-            }
+            console.error('Error verifying transaction:', error);
+            return false;
           }
         });
       });
 
-      console.log('Found blocks:', {
-        totalBlocks: userBlocks.length,
-        blockHashes: userBlocks.map(block => block.hash.substring(0, 10) + '...')
-      });
-
       return {
-        success: true, data: {
+        success: true,
+        data: {
           blocks: userBlocks,
-          userAccountHash: user.accountHash,
-          totalBlocks: userBlocks.length
-        }
+          userAccountHash: account.accountHash,
+          totalBlocks: userBlocks.length,
+        },
       };
-
     } catch (error) {
       if (error instanceof Error) {
-        return { success: false, error: error.message };  // Return error message if caught.
+        return { success: false, error: error.message };
       }
     }
   }
@@ -176,23 +175,26 @@ export class AccountService {
   /**
    * Retrieves a user account by their public key.
    * 
-   * @param publicKey String representation of the user's public key.
+   * @param publicKeyPem String representation of the user's public key.
    * @returns The user object if found, otherwise null.
    */
-  getAccount(publicKeyPem: string): User | null {
-    console.log('Buscando usuario con publicKeyPem:', publicKeyPem); // Depuración
-    const user = Object.values(this.users).find(user => {
-      const userPublicKeyPem = user.publicKey.export({
-        type: 'spki',
-        format: 'pem',
-      }).toString();
-      console.log('Clave pública del usuario:', userPublicKeyPem); // Depuración
-      return userPublicKeyPem === publicKeyPem;
-    });
-    if (!user) {
-      console.error('Usuario no encontrado para la publicKeyPem:', publicKeyPem); // Depuración
+  async getAccount(publicKeyPem: string) {
+    try {
+      const account = await this.prisma.account.findFirst({
+        where: { publicKey: publicKeyPem },
+      });
+
+      if (!account) return null;
+
+      const user = new User(account.name, account.email);
+      user.privateKey = crypto.createPrivateKey(account.privateKey);
+      user.publicKey = crypto.createPublicKey(account.publicKey);
+
+      return { success: true, data: user };
+    } catch (error) {
+      console.error('Error finding account:', error);
+      return null;
     }
-    return user || null;
   }
 
   /**
@@ -201,11 +203,35 @@ export class AccountService {
    * @param currency - Nombre de la criptomoneda.
    * @param amount - Cantidad a añadir o restar.
    */
-  public updateBalance(accountHash: string, currency: string, amount: number): void {
-    const user = this.users[accountHash];
-    if (!user) throw new Error('Usuario no encontrado');
+  async updateBalance(accountHash: string, currency: string, amount: number) {
+    try {
+      const account = await this.prisma.account.findUnique({
+        where: { accountHash },
+        include: { balances: true },
+      });
 
-    user.updateBalance(currency, amount);  // Actualizar el saldo.
+      if (!account) throw new Error('User not found');
+
+      const balance = account.balances.find(b => b.currency === currency);
+      if (!balance) {
+        await this.prisma.balance.create({
+          data: {
+            currency,
+            amount: amount.toString(),
+            accountId: account.id,
+          },
+        });
+      } else {
+        const newAmount = parseFloat(balance.amount) + amount;
+        await this.prisma.balance.update({
+          where: { id: balance.id },
+          data: { amount: newAmount.toString() },
+        });
+      }
+    } catch (error) {
+      console.error('Error updating balance:', error);
+      throw error;
+    }
   }
 
   /**
@@ -214,41 +240,65 @@ export class AccountService {
    * @param currency - Nombre de la criptomoneda.
    * @returns El saldo de la criptomoneda.
    */
-  public getBalance(accountHash: string, currency: string): number {
-    const user = this.users[accountHash];
-    if (!user) throw new Error('Usuario no encontrado');
+  async getBalance(accountHash: string, currency: string): Promise<number> {
+    try {
+      const account = await this.prisma.account.findUnique({
+        where: { accountHash },
+        include: { balances: true },
+      });
 
-    return user.getBalance(currency) || 0;  // Devolver 0 si la criptomoneda no existe.
+      if (!account) throw new Error('User not found');
+
+      const balance = account.balances.find(b => b.currency === currency);
+      return balance ? parseFloat(balance.amount) : 0;
+    } catch (error) {
+      console.error('Error getting balance:', error);
+      throw error;
+    }
   }
 
-  /**
-   * Calcula las recompensas auto-escalables para el cliente, el dueño del negocio y la plataforma.
-   * @param amount - Valor de la transacción en USD.
-   * @returns Un objeto con las recompensas para cada participante.
-   */
-  calculateAutoScalableRewards(amount: number): { clientReward: number; ownerReward: number; platformReward: number } {
-    // Definir tasas base y factores de escala
-    const baseClientRate = 0.01; // 1% base para el cliente
-    const baseOwnerRate = 0.005; // 0.5% base para el dueño del negocio
-    const basePlatformRate = 0.005; // 0.5% base para la plataforma
+  
+  async calculateAutoScalableRewards(
+    amount: number,
+    tokenId: string,
+  ): Promise<{ clientReward: number; ownerReward: number }> {
+    try {
+      // Obtener el precio actual de la criptomoneda desde el contrato inteligente
+      const coinPriceInCOP = this.smartContract.getTokenCurrentValue(tokenId);
 
-    // Función para calcular la tasa escalada
-    const calculateScaledRate = (baseRate: number, amount: number): number => {
-      // Usamos una función logarítmica para suavizar el crecimiento de la tasa
-      return baseRate * Math.log1p(amount); // log1p(x) = ln(1 + x)
-    };
+      // Convertir el precio de COP a USD (suponiendo una tasa de cambio fija, por ejemplo, 1 USD = 4000 COP)
+      const exchangeRate = 4000; // Tasa de cambio COP a USD (ajustable según necesidades)
+      const coinPriceInUSD = coinPriceInCOP / exchangeRate;
 
-    // Calcular las tasas escaladas
-    const clientRate = calculateScaledRate(baseClientRate, amount);
-    const ownerRate = calculateScaledRate(baseOwnerRate, amount);
-    const platformRate = calculateScaledRate(basePlatformRate, amount);
+      // Definir tasas base
+      const baseClientRate = 0.01; // 1% base para el cliente
+      const baseOwnerRate = 0.005; // 0.5% base para el dueño del negocio
 
-    // Calcular las recompensas
-    const clientReward = amount * clientRate;
-    const ownerReward = amount * ownerRate;
-    const platformReward = amount * platformRate;
+      // Función para calcular la tasa escalada
+      const calculateScaledRate = (
+        baseRate: number,
+        amount: number,
+        coinPrice: number,
+      ): number => {
+        // Ajustar la tasa según el valor de la moneda y el monto de la compra
+        // Entre más alto el valor de la moneda, menor será la tasa
+        // Entre más alto el monto de la compra, mayor será la tasa
+        return baseRate * (Math.log1p(amount) / Math.log1p(coinPrice));
+      };
 
-    return { clientReward, ownerReward, platformReward };
+      // Calcular las tasas escaladas
+      const clientRate = calculateScaledRate(baseClientRate, amount, coinPriceInUSD);
+      const ownerRate = calculateScaledRate(baseOwnerRate, amount, coinPriceInUSD);
+
+      // Calcular las recompensas en criptomonedas
+      const clientReward = (amount * clientRate) / coinPriceInUSD;
+      const ownerReward = (amount * ownerRate) / coinPriceInUSD;
+
+      return { clientReward, ownerReward };
+    } catch (error) {
+      console.error('Error calculating rewards:', error);
+      throw new Error('No se pudo calcular las recompensas');
+    }
   }
 
   /**
@@ -256,11 +306,19 @@ export class AccountService {
    * @param accountHash - Hash de la cuenta.
    * @returns Verdadero si el plan está activado, falso en caso contrario.
    */
-  public hasRewardPlanEnabled(accountHash: string): boolean {
-    const user = this.users[accountHash];
-    if (!user) throw new Error('Usuario no encontrado');
+  async hasRewardPlanEnabled(accountHash: string): Promise<boolean> {
+    try {
+      const account = await this.prisma.account.findUnique({
+        where: { accountHash },
+      });
 
-    return user.hasRewardPlanEnabled();  // Verificar el estado del plan de recompensas.
+      if (!account) throw new Error('Usuario no encontrado');
+
+      return account.rewardPlanEnabled; // Devuelve el estado del plan de recompensas.
+    } catch (error) {
+      console.error('Error verificando el plan de recompensas:', error);
+      throw error;
+    }
   }
 
   /**
@@ -268,10 +326,22 @@ export class AccountService {
    * @param accountHash - Hash de la cuenta.
    * @param enabled - Estado del plan (true para activar, false para desactivar).
    */
-  public setRewardPlanEnabled(accountHash: string, enabled: boolean): void {
-    const user = this.users[accountHash];
-    if (!user) throw new Error('Usuario no encontrado');
+  async setRewardPlanEnabled(accountHash: string, enabled: boolean): Promise<void> {
+    try {
+      const account = await this.prisma.account.findUnique({
+        where: { accountHash },
+      });
 
-    user.setRewardPlanEnabled(enabled);  // Actualizar el estado del plan de recompensas.
+      if (!account) throw new Error('Usuario no encontrado');
+
+      await this.prisma.account.update({
+        where: { accountHash },
+        data: { rewardPlanEnabled: enabled },
+      });
+    } catch (error) {
+      console.error('Error actualizando el estado del plan de recompensas:', error);
+      throw error;
+    }
   }
+
 }

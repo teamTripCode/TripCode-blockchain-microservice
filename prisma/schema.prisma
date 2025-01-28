@@ -1,0 +1,140 @@
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "mongodb"
+    url      = env("MONGODB_URI")
+}
+
+model Account {
+    id                String          @id @default(uuid()) @map("_id")
+    accountHash       String          @unique
+    name              String
+    email             String          @unique
+    publicKey         String
+    privateKey        String
+    balances          Balance[]
+    rewardPlanEnabled Boolean         @default(false)
+    gasBalance        Float           @default(0)
+    createdAt         DateTime        @default(now())
+    updatedAt         DateTime        @updatedAt
+    ApiKey            ApiKey[]
+    Block             Block[]
+    Transaction       Transaction[]
+    SmartContract     SmartContract[]
+    Token             Token[]
+    Kyc               Kyc[]
+}
+
+model Balance {
+    id        String  @id @default(uuid()) @map("_id")
+    currency  String
+    amount    String
+    account   Account @relation(fields: [accountId], references: [id])
+    accountId String
+}
+
+model ApiKey {
+    id          String    @id @default(uuid()) @map("_id")
+    key         String    @unique
+    createdAt   DateTime  @default(now())
+    expiresAt   DateTime?
+    description String?
+    permissions String[]
+    isActive    Boolean   @default(true)
+    account     Account   @relation(fields: [accountId], references: [id])
+    accountId   String
+}
+
+model Transaction {
+    id          String   @id @default(uuid()) @map("_id")
+    processId   String   @unique
+    description String
+    data        String
+    timestamp   DateTime @default(now())
+    signature   String
+    Block       Block?   @relation(fields: [blockId], references: [id])
+    blockId     String?
+    account     Account  @relation(fields: [accountId], references: [id])
+    accountId   String
+}
+
+model Block {
+    id           String        @id @default(uuid()) @map("_id")
+    index        Int
+    timestamp    DateTime      @default(now())
+    transactions Transaction[]
+    previousHash String
+    hash         String
+    nonce        Int
+    signature    String
+    validator    String
+    account      Account       @relation(fields: [accountId], references: [id])
+    accountId    String
+    createdAt    DateTime      @default(now())
+    updatedAt    DateTime      @updatedAt
+}
+
+model SmartContract {
+    id           String   @id @default(uuid()) @map("_id")
+    creator      String
+    participants String[]
+    balance      Float    @default(0)
+    conditions   Json
+    actions      Json
+    metadata     Json
+    isClosed     Boolean  @default(false)
+    account      Account  @relation(fields: [accountId], references: [id])
+    accountId    String
+    createdAt    DateTime @default(now())
+    updatedAt    DateTime @updatedAt
+}
+
+model Token {
+    id            String   @id @default(uuid()) @map("_id")
+    tokenId       String   @unique
+    creator       String
+    name          String
+    initialValue  Float
+    currentValue  Float
+    maxSupply     Float
+    currentSupply Float
+    transactions  Json
+    account       Account  @relation(fields: [accountId], references: [id])
+    accountId     String
+    createdAt     DateTime @default(now())
+    updatedAt     DateTime @updatedAt
+}
+
+model Kyc {
+    id             String   @id @default(uuid()) @map("_id")
+    fullName       String
+    email          String
+    documentType   String
+    documentNumber String
+    documentFront  String
+    documentBack   String?
+    selfie         String
+    status         String   @default("pending")
+    account        Account  @relation(fields: [accountId], references: [id])
+    accountId      String
+    createdAt      DateTime @default(now())
+    updatedAt      DateTime @updatedAt
+}
+
+model Miner {
+    id               String   @id @default(uuid()) @map("_id")
+    address          String   @unique
+    stake            Float
+    delegatorAddress String?
+    createdAt        DateTime @default(now())
+    updatedAt        DateTime @updatedAt
+}
+
+model BlockchainEvent {
+    id        String   @id @default(uuid()) @map("_id")
+    eventType String
+    data      Json
+    timestamp DateTime @default(now())
+}

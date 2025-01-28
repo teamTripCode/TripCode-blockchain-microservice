@@ -1,4 +1,4 @@
-import { IBlock } from 'types/chainsType';
+import { IBlock } from 'src/chain/dto/create-chain.dto';
 import * as crypto from 'crypto'
 import { ITransaction } from 'src/chain/dto/create-chain.dto';
 import { Injectable } from '@nestjs/common';

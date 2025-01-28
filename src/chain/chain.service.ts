@@ -1,11 +1,19 @@
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { IBlockchain, isBlockData, ITransaction, NestedObject, ParamProp, FinancialTransactionBlockData } from './dto/create-chain.dto';
-import { IBlock } from 'types/chainsType';
+import {
+    IBlockchain,
+    isBlockData,
+    ITransaction,
+    NestedObject,
+    ParamProp, 
+    FinancialTransactionBlockData,
+    IBlock
+} from './dto/create-chain.dto';
 import { CryptoUtils } from 'handlersChain/CryptoUtils';
 import { Block } from 'handlersChain/Block';
 import * as crypto from 'crypto';
 import { AccountService } from 'src/account/account.service';
 import { ConsensusService } from 'src/consensus/consensus.service';
+import { SmartContractsService } from 'src/smart-contracts/smart-contracts.service';
 
 @Injectable()
 export class ChainService implements IBlockchain {
@@ -17,7 +25,9 @@ export class ChainService implements IBlockchain {
         @Inject(forwardRef(() => AccountService))
         private readonly accountService: AccountService,  // Injecting AccountService for user management.
         // private readonly chainGateway: ChainGateway,  // Injecting ChainGateway for communication.
-        private readonly consensusService: ConsensusService  // Injecting ConsensusService for consensus operations.
+        private readonly consensusService: ConsensusService,  // Injecting ConsensusService for consensus operations.
+        @Inject(forwardRef(() => SmartContractsService))
+        private readonly smartcontract: SmartContractsService,
     ) {
         this.chain = [this.createGenesisBlock()];  // Initialize the chain with the genesis block.
         this.pendingTransactions = [];  // Initialize with no pending transactions.
@@ -91,7 +101,8 @@ export class ChainService implements IBlockchain {
 
                 // Aplicar recompensas si es necesario
                 if (blockData.amount && blockData.from && blockData.to) {
-                    await this.applyAutoScalableRewards(blockData.from, blockData.to, blockData.amount);
+                    const tokenId = await this.getTokenIdByPublicKey(publicKeyString);
+                    await this.applyAutoScalableRewards(blockData.from, blockData.to, blockData.amount, tokenId);
                 }
 
                 return { success: true, data: newBlock };  // Return the newly created block.
@@ -102,6 +113,48 @@ export class ChainService implements IBlockchain {
             return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };  // Return the error message if something goes wrong.
         }
     }
+
+    /**
+     * Creates a private block that only a specific user can view.
+     * The data is encrypted using the user's public key to ensure privacy.
+     * 
+     * @param blockData The data to store in the block.
+     * @param publicKeyString The public key of the user creating the block.
+     * @returns The newly created private block.
+     */
+    public async createPrivateBlock(blockData: NestedObject, publicKeyString: string): Promise<IBlock> {
+        const publicKey = crypto.createPublicKey(publicKeyString);
+        const user = await this.accountService.getAccount(publicKeyString);
+        if (!user) throw new Error('User not found');
+
+        const encryptedData = CryptoUtils.encryptData(blockData, publicKey);
+        const transaction: ITransaction = {
+            processId: crypto.randomUUID(),
+            data: encryptedData,
+            description: 'Private Block Creation',
+            timestamp: new Date().toISOString(),
+            signature: user.data.signData(JSON.stringify(blockData)),
+        };
+
+        const newBlock = new Block(
+            this.chain.length,
+            new Date().toISOString(),
+            [transaction],
+            this.getLatestBlock().hash,
+            transaction.signature
+        );
+
+        this.consensusService.mineBlock(newBlock);
+
+        if (this.consensusService.validateBlock(newBlock)) {
+            this.chain.push(newBlock);
+            return newBlock;
+        }
+
+        throw new Error('Invalid block');
+    }
+
+
 
     /**
      * Minar un bloque con recompensas en la criptomoneda seleccionada.
@@ -117,17 +170,17 @@ export class ChainService implements IBlockchain {
     ): Promise<IBlock | { success: boolean; error: string }> {
         try {
             const publicKey = crypto.createPublicKey(publicKeyString);  // Convertir la clave pública.
-            const user = this.accountService.getAccount(publicKeyString);  // Obtener la cuenta del negocio.
+            const user = await this.accountService.getAccount(publicKeyString);  // Obtener la cuenta del negocio.
 
             if (!user) throw new Error('Cuenta no encontrada');  // Validar que la cuenta exista.
 
             // Verificar si el plan de recompensas está activado.
-            if (!user.hasRewardPlanEnabled()) {
+            if (!user.data.hasRewardPlanEnabled()) {
                 throw new Error('El plan de recompensas no está activado para esta cuenta');
             }
 
             // Verificar si la criptomoneda seleccionada es válida.
-            if (!user.getBalance(currency) && currency !== 'tripcoin') {
+            if (!user.data.getBalance(currency) && currency !== 'tripcoin') {
                 throw new Error(`La criptomoneda ${currency} no está disponible en la cuenta`);
             }
 
@@ -147,7 +200,7 @@ export class ChainService implements IBlockchain {
                 data: CryptoUtils.encryptData(blockData, publicKey),  // Datos cifrados.
                 description: `Compra con recompensas en ${currency}`,  // Descripción.
                 timestamp: new Date().toISOString(),  // Fecha y hora.
-                signature: user.signData(JSON.stringify(blockData)),  // Firma del negocio.
+                signature: user.data.signData(JSON.stringify(blockData)),  // Firma del negocio.
             };
 
             // Crear el nuevo bloque.
@@ -166,23 +219,26 @@ export class ChainService implements IBlockchain {
             if (this.consensusService.validateBlock(newBlock)) {
                 this.chain.push(newBlock);  // Agregar el bloque a la cadena.
 
+                // Obtener el tokenId asociado a la clave pública del negocio.
+                const tokenId = await this.getTokenIdByPublicKey(publicKeyString);
+
                 // Aplicar recompensas en la criptomoneda seleccionada.
-                const { clientReward, ownerReward, platformReward } =
-                    this.accountService.calculateAutoScalableRewards(blockData.amount);
+                const { clientReward, ownerReward } = await this.accountService.calculateAutoScalableRewards(blockData.amount, tokenId);
 
                 // Recompensar al cliente.
-                const clientAccount = this.accountService.getAccount(blockData.to);
+                const clientAccount = await this.accountService.getAccount(blockData.to);
                 if (clientAccount) {
-                    clientAccount.updateBalance(currency, clientReward);
+                    clientAccount.data.updateBalance(currency, clientReward);
                 }
 
                 // Recompensar al negocio.
-                user.updateBalance(currency, ownerReward);
+                user.data.updateBalance(currency, ownerReward);
 
                 // Recompensar a la plataforma.
-                const platformAccount = this.accountService.getAccount('platform');
+                const platformAccount = await this.accountService.getAccount('platform');
                 if (platformAccount) {
-                    platformAccount.updateBalance(currency, platformReward);
+                    const platformReward = ownerReward * 0.1; // 10% of ownerReward
+                    platformAccount.data.updateBalance(currency, platformReward);
                 }
 
                 return newBlock;  // Devolver el bloque minado.
@@ -268,46 +324,6 @@ export class ChainService implements IBlockchain {
     }
 
     /**
-     * Creates a private block that only a specific user can view.
-     * The data is encrypted using the user's public key to ensure privacy.
-     * 
-     * @param blockData The data to store in the block.
-     * @param publicKeyString The public key of the user creating the block.
-     * @returns The newly created private block.
-     */
-    public createPrivateBlock(blockData: NestedObject, publicKeyString: string): IBlock {
-        const publicKey = crypto.createPublicKey(publicKeyString);  // Convert the public key string to a KeyObject.
-        const user = this.accountService.getAccount(publicKeyString);  // Retrieve the user by public key.
-        if (!user) throw new Error('User not found');  // Ensure the user exists.
-
-        const encryptedData = CryptoUtils.encryptData(blockData, publicKey);  // Encrypt the data with the user's public key.
-        const transaction: ITransaction = {
-            processId: crypto.randomUUID(),  // Generate a unique transaction ID.
-            data: encryptedData,  // Encrypted data to store in the block.
-            description: 'Private Block Creation',  // Description of the block's creation.
-            timestamp: new Date().toISOString(),  // Current timestamp.
-            signature: user.signData(JSON.stringify(blockData)),  // User signs the block data.
-        };
-
-        const newBlock = new Block(
-            this.chain.length,  // Block index based on the current length of the chain.
-            new Date().toISOString(),  // Block timestamp.
-            [transaction],  // The transaction included in the block.
-            this.getLatestBlock().hash,  // Link the new block to the previous block in the chain.
-            transaction.signature  // The signature of the transaction.
-        );
-
-        this.consensusService.mineBlock(newBlock);  // Mine the new block using the consensus mechanism.
-
-        if (this.consensusService.validateBlock(newBlock)) {
-            this.chain.push(newBlock);  // Add the validated block to the chain.
-            return newBlock;  // Return the created private block.
-        }
-
-        throw new Error('Invalid block');  // If the block is invalid, throw an error.
-    }
-
-    /**
      * Synchronizes the local blockchain with a received blockchain from a peer.
      * This method ensures that the local chain is up-to-date by replacing or extending
      * the chain based on the received chain.
@@ -343,53 +359,71 @@ export class ChainService implements IBlockchain {
      * @param from - Clave pública del cliente.
      * @param to - Clave pública del dueño del negocio.
      * @param amount - Valor de la transacción en USD.
+     * @param tokenId - ID del token asociado al negocio.
      */
-    async applyAutoScalableRewards(from: string, to: string, amount: number): Promise<void> {
-        // Calcular las recompensas auto-escalables
-        const { clientReward, ownerReward, platformReward } = this.accountService.calculateAutoScalableRewards(amount);
+    async applyAutoScalableRewards(
+        from: string,
+        to: string,
+        amount: number,
+        tokenId: string, // Nuevo parámetro: ID del token
+    ): Promise<void> {
+        try {
+            // Calcular las recompensas auto-escalables usando el tokenId
+            const { clientReward, ownerReward } = await this.accountService.calculateAutoScalableRewards(amount, tokenId);
 
-        // Obtener las cuentas de los participantes
-        const clientAccount = this.accountService.getAccount(from);
-        const ownerAccount = this.accountService.getAccount(to);
-        const platformAccount = this.accountService.getAccount('platform'); // Cuenta de la plataforma
+            // Obtener las cuentas de los participantes
+            const clientAccount = await this.accountService.getAccount(from);
+            const ownerAccount = await this.accountService.getAccount(to);
+            //   const platformAccount = this.accountService.getAccount('platform'); // Cuenta de la plataforma
 
-        if (!clientAccount || !ownerAccount || !platformAccount) {
-            throw new Error('Una o más cuentas no existen');
+            if (!clientAccount || !ownerAccount) {
+                throw new Error('Una o más cuentas no existen');
+            }
+
+            // Aplicar las recompensas en la criptomoneda asociada al token
+            const currency = this.smartcontract.getTokenCurrentValue(tokenId); // Obtener la criptomoneda del token
+            clientAccount.data.updateBalance(currency, clientReward); // Recompensa al cliente
+            ownerAccount.data.updateBalance(currency, ownerReward); // Recompensa al dueño del negocio
+            //   platformAccount.updateBalance(currency, platformReward); // Recompensa a la plataforma
+
+            // Crear transacciones de recompensas
+            const rewardTransactions = [
+                {
+                    from: 'system', // La recompensa proviene del sistema
+                    to: from, // Cliente
+                    amount: clientReward,
+                    currency, // Usar la criptomoneda del token
+                    description: `Recompensa por compra de ${amount} USD`,
+                },
+                {
+                    from: 'system', // La recompensa proviene del sistema
+                    to: to, // Dueño del negocio
+                    amount: ownerReward,
+                    currency, // Usar la criptomoneda del token
+                    description: `Recompensa por venta de ${amount} USD`,
+                },
+            ];
+
+            // Crear un bloque para cada transacción de recompensa
+            for (const transaction of rewardTransactions) {
+                await this.createBlock([transaction, 'systemPublicKey']); // 'systemPublicKey' es la clave pública del sistema
+            }
+        } catch (error) {
+            console.error('Error aplicando recompensas:', error);
+            throw new Error('No se pudieron aplicar las recompensas');
         }
+    }
 
-        // Aplicar las recompensas
-        clientAccount.updateBalance('tripcoin', clientReward); // Recompensa al cliente
-        ownerAccount.updateBalance('tripcoin', ownerReward); // Recompensa al dueño del negocio
-        platformAccount.updateBalance('tripcoin', platformReward); // Recompensa a la plataforma
-
-        // Crear transacciones de recompensas
-        const rewardTransactions = [
-            {
-                from: 'system', // La recompensa proviene del sistema
-                to: from, // Cliente
-                amount: clientReward,
-                currency: 'tripcoin',
-                description: `Recompensa por compra de ${amount} USD`,
-            },
-            {
-                from: 'system', // La recompensa proviene del sistema
-                to: to, // Dueño del negocio
-                amount: ownerReward,
-                currency: 'tripcoin',
-                description: `Recompensa por venta de ${amount} USD`,
-            },
-            {
-                from: 'system', // La recompensa proviene del sistema
-                to: 'platform', // Plataforma
-                amount: platformReward,
-                currency: 'tripcoin',
-                description: `Comisión por transacción de ${amount} USD`,
-            },
-        ];
-
-        // Crear un bloque para cada transacción de recompensa
-        for (const transaction of rewardTransactions) {
-            await this.createBlock([transaction, 'systemPublicKey']); // 'systemPublicKey' es la clave pública del sistema
+    /**
+     * Gets the tokenId associated with a business's public key
+     * @param publicKeyString - The public key of the business
+     * @returns The associated tokenId
+     */
+    private async getTokenIdByPublicKey(publicKeyString: string): Promise<string> {
+        const user = await this.accountService.getAccount(publicKeyString)
+        if (!user) {
+            throw new Error('User not found');
         }
+        return user.data.getTokenIdByBusinessPublicKey(publicKeyString);
     }
 }

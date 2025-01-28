@@ -10,6 +10,7 @@ import { GasModule } from './gas/gas.module';
 import { ConversionModule } from './conversion/conversion.module';
 import { ConfigModule } from '@nestjs/config';
 import { KycModule } from './kyc/kyc.module';
+import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
   imports: [
@@ -21,7 +22,8 @@ import { KycModule } from './kyc/kyc.module';
     AuthModule,
     GasModule,
     ConversionModule,
-    KycModule
+    KycModule,
+    PrismaModule
   ],
   controllers: [AppController],
   providers: [AppService],

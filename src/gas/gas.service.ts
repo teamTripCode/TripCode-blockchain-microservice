@@ -46,23 +46,23 @@ export class GasService {
    * @param currency - Criptomoneda en la que se cobrará el gas (por defecto, "tripcoin").
    * @returns Verdadero si el cobro fue exitoso.
    */
-  chargeGas(publicKey: string, complexity: number, currency: string = 'tripcoin'): boolean {
+  async chargeGas(publicKey: string, complexity: number, currency: string = 'tripcoin'): Promise<boolean> {
     const gasCostInUSD = this.calculateGasCostInUSD(complexity);
     const gasCostInCrypto = this.convertGasCostToCrypto(gasCostInUSD, currency);
 
-    const user = this.accountService.getAccount(publicKey);
+    const user = await this.accountService.getAccount(publicKey);
     if (!user) {
       throw new Error('Usuario no encontrado');
     }
 
     // Verificar si el usuario tiene suficiente saldo en la criptomoneda especificada
-    const userBalance = user.getBalance(currency);
+    const userBalance = user.data.getBalance(currency);
     if (userBalance < gasCostInCrypto) {
       throw new Error('Saldo insuficiente para cubrir el gas');
     }
 
     // Cobrar el gas al usuario
-    user.updateBalance(currency, -gasCostInCrypto);
+    user.data.updateBalance(currency, -gasCostInCrypto);
 
     // Registrar la transacción de gas en la cadena
     this.chainService.createBlock([
@@ -73,7 +73,7 @@ export class GasService {
         currency,
         description: `Cobro de gas por transacción en ${currency}`,
       },
-      user.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+      user.data.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
     ]);
 
     return true;

@@ -3,13 +3,16 @@ import { ChainService } from './chain.service';
 import { ChainController } from './chain.controller';
 import { AccountModule } from 'src/account/account.module';
 import { ConsensusModule } from 'src/consensus/consensus.module';
-import { ChainGateway } from './chain.gateway';
-import { ConsensusService } from 'src/consensus/consensus.service';
+import { SmartContractsModule } from 'src/smart-contracts/smart-contracts.module';
 
 @Module({
-  imports: [forwardRef(() => AccountModule), ConsensusModule],
+  imports: [
+    forwardRef(() => AccountModule),
+    ConsensusModule,
+    forwardRef(() => SmartContractsModule)
+  ],
   controllers: [ChainController],
-  providers: [ChainService, ChainGateway],
+  providers: [ChainService],
   exports: [ChainService]
 })
 export class ChainModule {}

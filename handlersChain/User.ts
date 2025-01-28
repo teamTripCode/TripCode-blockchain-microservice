@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import { ApiKey, IUser } from 'types/userType';
+import { IUser, ApiKey } from 'src/account/dto/create-account.dto';
 import { CryptoUtils } from './CryptoUtils';
 import { Injectable } from '@nestjs/common';
 
@@ -14,6 +14,14 @@ export class User implements IUser {
     public apiKeys: ApiKey[];
     public rewardPlanEnabled: boolean;
     public gasBalance: number;
+    public smartContracts: {
+        contractId: string;
+        businessPublicKey: string;
+        tokenId: string;
+        businessName: string;
+        isActive: boolean
+    }[];
+
 
     constructor(name: string, email: string) {
         try {
@@ -67,7 +75,7 @@ export class User implements IUser {
      * @param currency - Nombre de la criptomoneda.
      * @param amount - Cantidad a añadir o restar.
      */
-    public updateBalance(currency: string, amount: number): void {
+    public updateBalance(currency: number | string, amount: number): void {
         if (!this.balances[currency]) {
             this.balances[currency] = 0;  // Inicializar el saldo si la criptomoneda no existe.
         }
@@ -239,5 +247,40 @@ export class User implements IUser {
      */
     public getGasBalance(): number {
         return this.gasBalance;
+    }
+
+    /**
+     * Añadir un contrato inteligente al usuario.
+     * @param contractId - ID del contrato inteligente.
+     * @param businessPublicKey - Clave pública del negocio asociado.
+     * @param tokenId - Token ID asociado al contrato.
+     * @param businessName - Nombre del negocio.
+     */
+    public addSmartContract(contractId: string, businessPublicKey: string, tokenId: string, businessName: string): void {
+        this.smartContracts.push({
+            contractId,
+            businessPublicKey,
+            tokenId,
+            businessName,
+            isActive: true, // Por defecto, el contrato está activo
+        });
+    }
+
+    /**
+     * Obtener el tokenId asociado a un negocio específico.
+     * @param businessPublicKey - Clave pública del negocio.
+     * @returns El tokenId asociado al negocio.
+     * @throws Error si no se encuentra un contrato activo para el negocio.
+     */
+    public getTokenIdByBusinessPublicKey(businessPublicKey: string): string {
+        const contract = this.smartContracts.find(
+            (contract) => contract.businessPublicKey === businessPublicKey && contract.isActive
+        );
+
+        if (!contract) {
+            throw new Error('No se encontró un contrato activo para la clave pública del negocio proporcionada');
+        }
+
+        return contract.tokenId;
     }
 }

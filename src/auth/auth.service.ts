@@ -19,17 +19,17 @@ export class AuthService {
   async validateUser(publicKey: string): Promise<responseProp> {
     try {
       // Obtener el usuario por su clave pública
-      const user = this.accountService.getAccount(publicKey);
+      const user = await this.accountService.getAccount(publicKey);
       if (!user) {
         return { success: false, error: 'Usuario no encontrado' };
       }
 
       // Generar la firma automáticamente en el servidor
       const messageToSign = 'login-request';
-      const signature = user.signData(messageToSign);
+      const signature = user.data.signData(messageToSign);
 
       // Verificar la firma generada
-      const isValid = user.verifyData(messageToSign, signature);
+      const isValid = user.data.verifyData(messageToSign, signature);
       if (!isValid) {
         return { success: false, error: 'Firma no válida' };
       }
@@ -64,14 +64,14 @@ export class AuthService {
 
       console.log('Clave pública en formato PEM:', publicKeyPem); // Depuración
 
-      const user = this.accountService.getAccount(publicKeyPem);
+      const user = await this.accountService.getAccount(publicKeyPem);
       if (!user) {
         console.error('Usuario no encontrado para la publicKeyPem:', publicKeyPem); // Depuración
         return { success: false, error: 'Usuario no encontrado' };
       }
 
       const apiKey = crypto.randomBytes(32).toString('hex');
-      user.addApiKey(apiKey, description, expiresAt, permissions);
+      user.data.addApiKey(apiKey, description, expiresAt, permissions);
 
       // Devolver la API Key en la respuesta
       return { success: true, data: apiKey };
@@ -118,12 +118,12 @@ export class AuthService {
    */
   async removeApiKey(publicKey: string, apiKey: string): Promise<responseProp> {
     try {
-      const user = this.accountService.getAccount(publicKey);
+      const user = await this.accountService.getAccount(publicKey);
       if (!user) {
         return { success: false, error: 'Usuario no encontrado' };
       }
 
-      user.removeApiKey(apiKey); // Eliminar la API Key del usuario
+      user.data.removeApiKey(apiKey); // Eliminar la API Key del usuario
       return { success: true, data: 'API Key eliminada correctamente' };
     } catch (error) {
       // Manejar errores inesperados
@@ -142,12 +142,12 @@ export class AuthService {
    */
   async deactivateApiKey(publicKey: string, apiKey: string): Promise<responseProp> {
     try {
-      const user = this.accountService.getAccount(publicKey);
+      const user = await this.accountService.getAccount(publicKey);
       if (!user) {
         return { success: false, error: 'Usuario no encontrado' };
       }
 
-      user.deactivateApiKey(apiKey); // Desactivar la API Key del usuario
+      user.data.deactivateApiKey(apiKey); // Desactivar la API Key del usuario
       return { success: true, data: 'API Key desactivada correctamente' };
     } catch (error) {
       // Manejar errores inesperados

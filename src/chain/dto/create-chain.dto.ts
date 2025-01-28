@@ -1,4 +1,3 @@
-import { IBlock } from "types/chainsType";
 import * as crypto from 'crypto';
 
 export interface NestedObject {
@@ -43,7 +42,7 @@ export interface RewardBlockData {
     from: string; // Clave pública del emisor (sistema o negocio)
     to: string; // Clave pública del receptor (cliente o dueño)
     amount: number; // Cantidad de Tripcoins
-    rewardType: 'client' | 'owner' | 'platform'; // Tipo de recompensa
+    rewardType: 'client' | 'owner'; // Tipo de recompensa
     description?: string; // Descripción de la recompensa (opcional)
 }
 
@@ -131,6 +130,20 @@ export interface CriticalDataBlock extends BodyBlock<CriticalDataBlockData> {
     params: ParamProp<CriticalDataBlockData>; // Usar CriticalDataBlockData específicamente
 }
 
+export interface IBlock {
+    index: number;
+    timestamp: string;
+    transactions: ITransaction[];  // Lista de procesos importantes y críticos.
+    previousHash: string;
+    hash: string;
+    nonce: number;
+    signature: string;  // Firma de la transacción.
+    validator: string;
+    calculateHash(): string;
+    mineBlock(difficulty: number): void;
+    forgeBlock(validator: string): void;
+}
+
 export interface BlockData {
     from: string; // Clave pública del remitente
     to: string; // Clave pública del destinatario
@@ -160,7 +173,7 @@ export interface IBlockchain {
     getDecryptedBlockData(blockIndex: number, publicKey: crypto.KeyObject): { success: boolean, data?: any, error?: string };  // Descifra los datos de un bloque específico.
     getAccountBlocks(publicKey: string): IBlock[];  // Obtiene los bloques asociados a una cuenta mediante su clave pública.
     getDecryptedData(publicKeyString: string, blockIndex: number): any[];  // Obtiene los datos desencriptados de un bloque específico.
-    createPrivateBlock(blockData: NestedObject, publicKeyString: string): IBlock;  // Crea un bloque privado.
+    createPrivateBlock(blockData: NestedObject, publicKeyString: string): Promise<IBlock>;  // Crea un bloque privado.
 }
 
 export function isBlockData(obj: any): obj is BlockData {

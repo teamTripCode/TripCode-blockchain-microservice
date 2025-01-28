@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, forwardRef, Inject, Injectable } from '@nestjs/common';
 import { ContractAction, ContractCondition, SmartContract } from './entities/smart-contract.entity';
 import { AccountService } from 'src/account/account.service';
 import { ChainService } from 'src/chain/chain.service';
@@ -25,7 +25,9 @@ export class SmartContractsService {
   }> = {};
 
   constructor(
+    @Inject(forwardRef(() => AccountService))
     private readonly accountService: AccountService,
+    @Inject(forwardRef(() => ChainService))
     private readonly chain: ChainService,
   ) { }
 
@@ -56,24 +58,24 @@ export class SmartContractsService {
    * @param currency - Nombre de la criptomoneda (por ejemplo, "tripcoin").
    * @returns Verdadero si la contribución fue exitosa.
    */
-  contributeToContract(
+  async contributeToContract(
     contractId: string,
     participant: string,
     amount: number,
     currency: string
-  ): boolean {
+  ) {
     const contract = this.contracts.find((c) => c.id === contractId);
     if (!contract || contract.isClosed) {
       throw new Error('Contrato no encontrado o ya cerrado');
     }
 
-    const user = this.accountService.getAccount(participant);
-    if (!user || user.getBalance(currency) < amount) {
+    const user = await this.accountService.getAccount(participant);
+    if (!user || user.data.getBalance(currency) < amount) {
       throw new Error('El participante no tiene suficientes fondos en la criptomoneda especificada');
     }
 
     // Transfiere los fondos al contrato
-    user.updateBalance(currency, -amount);
+    user.data.updateBalance(currency, -amount);
     contract.balance += amount;
     contract.participants.push(participant);
 
@@ -86,7 +88,7 @@ export class SmartContractsService {
         currency, // Especifica la criptomoneda
         description: `Contribución a contrato inteligente en ${currency}`,
       },
-      user.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+      user.data.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
     ]);
 
     // Verifica las condiciones y ejecuta las acciones si se cumplen
@@ -147,18 +149,18 @@ export class SmartContractsService {
   * @param recipient - Clave pública del destinatario de los tokens.
   * @returns Verdadero si la emisión fue exitosa.
   */
-  mintToken(
+  async mintToken(
     tokenId: string,
     amount: number,
     recipient: string
-  ): boolean {
+  ) {
     const token = this.tokens[tokenId];
     if (!token) {
       throw new Error('Token no encontrado');
     }
 
     // Verifica que el creador del token sea quien está emitiendo los tokens
-    const creatorAccount = this.accountService.getAccount(token.creator);
+    const creatorAccount = await this.accountService.getAccount(token.creator);
     if (!creatorAccount) {
       throw new Error('El creador del token no tiene una cuenta válida');
     }
@@ -172,11 +174,11 @@ export class SmartContractsService {
     token.currentSupply += amount;
 
     // Transfiere los tokens al destinatario
-    const recipientAccount = this.accountService.getAccount(recipient);
+    const recipientAccount = await this.accountService.getAccount(recipient);
     if (!recipientAccount) {
       throw new Error('El destinatario no tiene una cuenta válida');
     }
-    recipientAccount.updateBalance(token.name, amount);
+    recipientAccount.data.updateBalance(token.name, amount);
 
     // Registra la transacción en la cadena
     this.chain.createBlock([
@@ -187,7 +189,7 @@ export class SmartContractsService {
         currency: token.name,
         description: `Emisión de ${amount} ${token.name}`,
       },
-      creatorAccount.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+      creatorAccount.data.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
     ]);
 
     return true;
@@ -278,28 +280,28 @@ export class SmartContractsService {
    * @param amount - Cantidad de tokens a comprar.
    * @returns Verdadero si la compra fue exitosa.
    */
-  buyToken(
+  async buyToken(
     tokenId: string,
     buyer: string,
     amount: number
-  ): boolean {
+  ) {
     const token = this.tokens[tokenId];
     if (!token) throw new Error('Token no encontrado');
 
-    const buyerAccount = this.accountService.getAccount(buyer);
+    const buyerAccount = await this.accountService.getAccount(buyer);
     if (!buyerAccount) throw new Error('El comprador no tiene una cuenta válida');
 
     const totalCost = token.currentValue * amount;
 
-    if (buyerAccount.getBalance('cop') < totalCost) throw new Error('El comprador no tiene suficientes fondos');
+    if (buyerAccount.data.getBalance('cop') < totalCost) throw new Error('El comprador no tiene suficientes fondos');
 
-    const creatorAccount = this.accountService.getAccount(token.creator);
+    const creatorAccount = await this.accountService.getAccount(token.creator);
     if (!creatorAccount) throw new Error('El creador del token no tiene una cuenta válida');
 
-    buyerAccount.updateBalance('cop', -totalCost);
-    creatorAccount.updateBalance('cop', totalCost);
+    buyerAccount.data.updateBalance('cop', -totalCost);
+    creatorAccount.data.updateBalance('cop', totalCost);
 
-    buyerAccount.updateBalance(token.name, amount);
+    buyerAccount.data.updateBalance(token.name, amount);
 
     token.transactions.push({
       type: 'buy',
@@ -319,22 +321,22 @@ export class SmartContractsService {
    * @param amount - Cantidad de tokens a vender.
    * @returns Verdadero si la venta fue exitosa.
    */
-  sellToken(
+  async sellToken(
     tokenId: string,
     seller: string,
     amount: number
-  ): boolean {
+  ) {
     const token = this.tokens[tokenId];
     if (!token) throw new Error('Token no encontrado');
 
     // Verifica que el vendedor tenga una cuenta válida
-    const sellerAccount = this.accountService.getAccount(seller);
+    const sellerAccount = await this.accountService.getAccount(seller);
     if (!sellerAccount) {
       throw new Error('El vendedor no tiene una cuenta válida');
     }
 
     // Verifica que el vendedor tenga suficientes tokens
-    if (sellerAccount.getBalance(token.name) < amount) {
+    if (sellerAccount.data.getBalance(token.name) < amount) {
       throw new Error('El vendedor no tiene suficientes tokens');
     }
 
@@ -342,14 +344,14 @@ export class SmartContractsService {
     const totalIncome = token.currentValue * amount;
 
     // Transfiere los fondos al vendedor
-    sellerAccount.updateBalance('cop', totalIncome);
+    sellerAccount.data.updateBalance('cop', totalIncome);
 
     // Transfiere los tokens al creador del token (o quemarlos, según el caso)
-    const creatorAccount = this.accountService.getAccount(token.creator);
+    const creatorAccount = await this.accountService.getAccount(token.creator);
     if (!creatorAccount) {
       throw new Error('El creador del token no tiene una cuenta válida');
     }
-    creatorAccount.updateBalance(token.name, amount);
+    creatorAccount.data.updateBalance(token.name, amount);
 
     // Ajusta el precio de la criptomoneda (disminuye debido a la oferta)
     token.currentValue *= 0.95; // Disminuye un 5% por venta (ajustable)

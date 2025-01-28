@@ -1,12 +1,16 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { SmartContractsService } from './smart-contracts.service';
 import { SmartContractController } from './smart-contracts.controller';
 import { ChainModule } from 'src/chain/chain.module';
 import { AccountModule } from 'src/account/account.module';
 
 @Module({
+  imports: [
+    forwardRef(() => AccountModule),
+    forwardRef(() => ChainModule)
+  ],
   controllers: [SmartContractController],
   providers: [SmartContractsService],
-  imports: [AccountModule, ChainModule],
+  exports: [SmartContractsService]
 })
 export class SmartContractsModule {}

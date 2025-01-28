@@ -3,13 +3,10 @@ import { SmartContractsService } from './smart-contracts.service';
 import { GetContractDto, AddActionDto, AddConditionDto, ContributeToContractDto, CreateSmartContractDto } from './dto/create-smart-contract.dto';
 import { JwtAuthGuard } from '../auth/auth.guard'; // Importa tu JwtAuthGuard
 import { User } from 'handlersChain/User';
-import { SmartContract } from './entities/smart-contract.entity';
 
 @Controller('smart-contract')
 @UseGuards(JwtAuthGuard)
 export class SmartContractController {
-  private contracts: SmartContract[] = [];
-
   constructor(private readonly smartContractService: SmartContractsService) { }
 
   @Post('create')
