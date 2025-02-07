@@ -58,7 +58,7 @@ export class AccountService {
         throw new Error('Name and email are required to create an account');
       }
 
-      const user = new User(data.name, data.email);
+      const user = new User(data.name, data.email, this.prisma);
       this.users[user.accountHash] = user; // Almacenar el usuario
 
       const accountData = user.getAccountData();
@@ -182,6 +182,7 @@ export class AccountService {
     try {
       const account = await this.prisma.account.findFirst({
         where: { publicKey: publicKeyPem },
+        include: { balances: true }
       });
 
       if (!account) return null;
@@ -189,8 +190,18 @@ export class AccountService {
       const user = new User(account.name, account.email);
       user.privateKey = crypto.createPrivateKey(account.privateKey);
       user.publicKey = crypto.createPublicKey(account.publicKey);
+      user.rewardPlanEnabled = account.rewardPlanEnabled;
 
-      return { success: true, data: user };
+      // Asignar los balances
+      const tripcoinBalance = account.balances.find(balance => balance.currency === 'tripcoin');
+      if (tripcoinBalance) {
+        // Si encontramos el balance de tripcoin, lo asignamos a la instancia de User
+        user.balances = {
+          tripcoin: Number(tripcoinBalance.amount)
+        };
+      }
+
+      return { success: true, data: { user, accountId: account.id } };
     } catch (error) {
       console.error('Error finding account:', error);
       return null;
@@ -257,7 +268,7 @@ export class AccountService {
     }
   }
 
-  
+
   async calculateAutoScalableRewards(
     amount: number,
     tokenId: string,

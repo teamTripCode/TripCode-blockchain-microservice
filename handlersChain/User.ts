@@ -2,9 +2,11 @@ import * as crypto from 'crypto';
 import { IUser, ApiKey } from 'src/account/dto/create-account.dto';
 import { CryptoUtils } from './CryptoUtils';
 import { Injectable } from '@nestjs/common';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()
 export class User implements IUser {
+    private prisma: PrismaService
     public privateKey: crypto.KeyObject;
     public publicKey: crypto.KeyObject;
     public accountHash: string;
@@ -23,9 +25,15 @@ export class User implements IUser {
     }[];
 
 
-    constructor(name: string, email: string) {
+    constructor(
+        name: string,
+        email: string,
+        prisma?: PrismaService
+    ) {
         try {
             if (!name || !email) throw new Error('Name and email are required to create a User.');
+
+            this.prisma = prisma;
 
             console.log('Creating account hash...');
             this.accountHash = crypto.createHash('sha256')
@@ -68,6 +76,14 @@ export class User implements IUser {
             console.error('Unexpected error in User constructor:', error);
             throw new Error('Failed to create user');
         }
+    }
+
+    async fetchAdditionalInfo() {
+        if (!this.prisma) throw new Error("PrismaService no está disponible");
+        const accountData = await this.prisma.account.findUnique({
+            where: { email: this.email },
+        });
+        return accountData;
     }
 
     /**
@@ -218,8 +234,19 @@ export class User implements IUser {
      * Activar o desactivar el plan de recompensas.
      * @param enabled - Estado del plan (true para activar, false para desactivar).
      */
-    public setRewardPlanEnabled(enabled: boolean): void {
-        this.rewardPlanEnabled = enabled;
+    public async setRewardPlanEnabled(enabled: boolean): Promise<void> {
+        try {
+            this.rewardPlanEnabled = enabled;
+
+            // Guarda el estado del plan de recompensas en la base de datos
+            await this.prisma.account.update({
+                where: { email: this.email },
+                data: { rewardPlanEnabled: enabled },
+            });
+        } catch (error) {
+            console.error('Error updating reward plan state:', error);
+            throw new Error('Failed to update reward plan state');
+        }
     }
 
     /**

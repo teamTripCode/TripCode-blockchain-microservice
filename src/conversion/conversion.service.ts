@@ -8,7 +8,9 @@ export class ConversionService {
   private readonly apiUrl: string;
   private readonly apiKey: string;
 
-  constructor(private readonly httpService: HttpService) {
+  constructor(
+    private readonly httpService: HttpService
+  ) {
     // Define las variables de configuración directamente aquí
     this.apiUrl = process.env.CRYPTO_API_URL || 'https://api.coingecko.com/api/v3'; // URL por defecto
     this.apiKey = process.env.CRYPTO_API_KEY || 'default-api-key'; // Clave por defecto

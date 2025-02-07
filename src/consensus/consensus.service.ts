@@ -13,17 +13,23 @@ export class ConsensusService {
   ) { }
 
   /**
-   * Valida un bloque según el algoritmo de consenso (en este caso, PoW).
+   * Valida un bloque según el algoritmo de consenso (en este caso, PoW o PoS).
    * @param block - El bloque a validar.
    * @returns {boolean} True si el bloque es válido, de lo contrario false.
    */
   validateBlock(block: Block): boolean {
+    console.log('Validando bloque con hash:', block.hash);
+
     if (this.consensusAlgorithm === 'PoW') {
-      return block.hash.startsWith('0'.repeat(this.difficulty));
+      const isValid = block.hash.startsWith('0'.repeat(this.difficulty));
+      console.log(`PoW validation: ${isValid ? 'Bloque válido' : 'Bloque inválido'}`);
+      return isValid;
     }
 
     if (this.consensusAlgorithm === 'PoS') {
-      return this.validatePoSBlock(block);
+      const isValidPoS = this.validatePoSBlock(block);
+      console.log(`PoS validation: ${isValidPoS ? 'Bloque válido' : 'Bloque inválido'}`);
+      return isValidPoS;
     }
 
     return true;
@@ -34,18 +40,27 @@ export class ConsensusService {
    * @param block - El bloque a minar.
    */
   mineBlock(block: Block): void {
+    console.log('Algoritmo de consenso:', this.consensusAlgorithm);
+
     if (this.consensusAlgorithm === 'PoW') {
+      console.log('Iniciando minería para el bloque...');
       while (!this.validateBlock(block)) {
         block.nonce++;
         block.hash = block.calculateHash();
+        console.log(`Intento de hash: ${block.hash}, nonce: ${block.nonce}`);
       }
-      console.log(`Block mined: ${block.hash}`);
+      console.log(`Bloque minado: ${block.hash}`);
     }
 
     if (this.consensusAlgorithm === 'PoS') {
+      console.log('Iniciando minería PoS...');
       const validator = this.selectValidator();
-      if (!validator) throw new Error('No validators available');
-      block.forgeBlock(validator)
+      if (!validator) {
+        console.log('No hay validadores disponibles');
+        throw new Error('No validators available');
+      }
+      block.forgeBlock(validator);
+      console.log(`Bloque forjado por el validador: ${validator}`);
     }
   }
 
@@ -55,25 +70,32 @@ export class ConsensusService {
    * @returns {boolean} True si la cadena es válida, de lo contrario false.
    */
   validateChain(chain: Block[]): boolean {
+    console.log('Validando la cadena de bloques...');
+
     if (this.consensusAlgorithm === 'PoW') {
       for (let i = 1; i < chain.length; i++) {
         const currentBlock = chain[i];
         const previousBlock = chain[i - 1];
+        console.log(`Validando bloque ${i}: ${currentBlock.hash} con el bloque anterior ${previousBlock.hash}`);
         if (currentBlock.previousHash !== previousBlock.hash || !this.validateBlock(currentBlock)) {
+          console.log('Cadena inválida detectada.');
           return false;
         }
       }
     }
-    // Reglas para otros algoritmos de consenso
+    console.log('Cadena válida.');
     return true;
   }
 
   /**
-   * Nuevo: Selecciona un validador basado en su stake
+   * Nuevo: Selecciona un validador basado en su stake.
    */
   private selectValidator(): string {
+    console.log('Seleccionando validador...');
+
     const accounts = Object.values(this.accountService.users);
     const validators = accounts.filter(user => user.getBalance('tripcoin') >= this.minStake);
+    console.log(`Validadores disponibles: ${validators.length}`);
 
     if (validators.length === 0) return '';
 
@@ -85,6 +107,7 @@ export class ConsensusService {
     for (const user of validators) {
       cumulative += user.getBalance('tripcoin');
       if (random <= cumulative) {
+        console.log(`Validador seleccionado: ${user.publicKey.export({ type: 'spki', format: 'pem' }).toString()}`);
         return user.publicKey.export({ type: 'spki', format: 'pem' }).toString();
       }
     }
@@ -92,12 +115,17 @@ export class ConsensusService {
   }
 
   /**
-   * Nuevo: Lógica de validación para PoS
+   * Nuevo: Lógica de validación para PoS.
    */
   private validatePoSBlock(block: Block): boolean {
+    console.log(`Validando bloque PoS con validador ${block.validator}...`);
+
     if (!block.validator) return false;
 
     const validator = this.accountService.users[block.validator];
-    return !!validator && validator.getBalance('tripcoin') >= this.minStake && block.hash === block.calculateHash();
+    const isValid = !!validator && validator.getBalance('tripcoin') >= this.minStake && block.hash === block.calculateHash();
+    console.log(`PoS Block validation result: ${isValid ? 'Válido' : 'Inválido'}`);
+
+    return isValid;
   }
 }

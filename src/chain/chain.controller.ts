@@ -13,13 +13,11 @@ import {
     NestedObject,
     SmartContractBlockData,
     RewardBlockData,
-    AuditLogBlockData,
-    ExchangeBlockData,
-    UserRegistrationBlockData,
-    GovernanceBlockData,
+    FinancialTransactionBlock,
     FinancialTransactionBlockData,
-    CriticalDataBlockData
+
 } from './dto/create-chain.dto';
+import { Block } from 'handlersChain/Block';
 
 @Controller('chain')
 @UseGuards(JwtAuthGuard)
@@ -46,23 +44,21 @@ export class ChainController {
         try {
             switch (payload.method) {
                 case 'createBlock':
-                    return this.chainService.createBlock(payload.params);
+                    return this.chainService.createBlock(payload.params)
                 case 'createSmartContractBlock':
                     return this.chainService.createBlock(payload.params as [SmartContractBlockData, string]);
                 case 'createRewardBlock':
-                    return this.chainService.createBlock(payload.params as [RewardBlockData, string]);
-                case 'createAuditLogBlock':
-                    return this.chainService.createBlock(payload.params as [AuditLogBlockData, string]);
-                case 'createExchangeBlock':
-                    return this.chainService.createBlock(payload.params as [ExchangeBlockData, string]);
-                case 'createUserRegistrationBlock':
-                    return this.chainService.createBlock(payload.params as [UserRegistrationBlockData, string]);
-                case 'createGovernanceBlock':
-                    return this.chainService.createBlock(payload.params as [GovernanceBlockData, string]);
-                case 'createFinancialTransactionBlock':
-                    return this.chainService.createBlock(payload.params as [FinancialTransactionBlockData, string]);
-                case 'createCriticalDataBlock':
-                    return this.chainService.createBlock(payload.params as [CriticalDataBlockData, string]);
+                    const [blockData, publicKeyString] = payload.params as [RewardBlockData, string];
+
+                    const financialTransactionBlockData: FinancialTransactionBlockData = {
+                        transactionType: 'payment',
+                        from: blockData.from,
+                        to: blockData.to,
+                        amount: blockData.amount,
+                        description: blockData.description,
+                    }
+
+                    return this.chainService.createBlockWithRewards(financialTransactionBlockData, publicKeyString);
                 default:
                     throw new Error('Unsupported method');
             }
@@ -110,4 +106,22 @@ export class ChainController {
             return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
         }
     }
+
+    @Post('sync')
+    async synchronizeChain(
+        @Body() payload: { receivedChain: Block[]; accountHash: string }
+    ) {
+        return this.chainService.synchronizeChain(payload.receivedChain, payload.accountHash);
+    }
+
+    @Post('apply-rewards')
+    async applyRewardsManually(@Body() payload: { from: string, to: string; amount: number, tokenId: string }) {
+        const { from, to, amount, tokenId } = payload;
+        return this.chainService.applyAutoScalableRewards(from, to, amount, tokenId);
+    }
+
+    @Post('token_id')
+    async getTokenIdByPublicKey(
+        @Body() payload: { publicKeyString: string }
+    ) { return this.chainService.getTokenIdByPublicKey(payload.publicKeyString) }
 }

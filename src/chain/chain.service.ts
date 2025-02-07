@@ -4,7 +4,7 @@ import {
     isBlockData,
     ITransaction,
     NestedObject,
-    ParamProp, 
+    ParamProp,
     FinancialTransactionBlockData,
     IBlock
 } from './dto/create-chain.dto';
@@ -14,6 +14,7 @@ import * as crypto from 'crypto';
 import { AccountService } from 'src/account/account.service';
 import { ConsensusService } from 'src/consensus/consensus.service';
 import { SmartContractsService } from 'src/smart-contracts/smart-contracts.service';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()
 export class ChainService implements IBlockchain {
@@ -28,18 +29,112 @@ export class ChainService implements IBlockchain {
         private readonly consensusService: ConsensusService,  // Injecting ConsensusService for consensus operations.
         @Inject(forwardRef(() => SmartContractsService))
         private readonly smartcontract: SmartContractsService,
+        private readonly prisma: PrismaService,
     ) {
-        this.chain = [this.createGenesisBlock()];  // Initialize the chain with the genesis block.
         this.pendingTransactions = [];  // Initialize with no pending transactions.
         this.difficulty = 2;  // Set the mining difficulty level.
     }
 
-    /**
-     * Creates the genesis block (the first block in the blockchain).
-     * This block has no previous block and is the starting point of the blockchain.
-     */
-    public createGenesisBlock(): IBlock {
-        return new Block(0, new Date().toISOString(), [], '0', '');  // Genesis block has no transactions and points to nothing.
+    async onModuleInit() {
+        await this.initializeChain();
+    }
+
+    private async initializeChain() {
+        try {
+            // Cargar bloques existentes de la base de datos
+            const blocks = await this.prisma.block.findMany({
+                include: {
+                    transactions: true
+                },
+                orderBy: {
+                    index: 'asc'
+                }
+            });
+
+            if (blocks.length === 0) {
+                // Si no hay bloques, crear el bloque génesis
+                const genesisBlock = await this.createAndSaveGenesisBlock();
+                this.chain = [genesisBlock];
+            } else {
+                // Convertir los bloques de Prisma a instancias de Block
+                this.chain = blocks.map(block => {
+                    const transactions: ITransaction[] = block.transactions.map(tx => ({
+                        processId: tx.processId,
+                        description: tx.description,
+                        data: tx.data,
+                        timestamp: tx.timestamp.toISOString(),
+                        signature: tx.signature
+                    }));
+
+                    const blockInstance = new Block(
+                        block.index,
+                        block.timestamp.toISOString(),
+                        transactions,
+                        block.previousHash,
+                        block.signature
+                    );
+
+                    // Establecer el hash y nonce existentes en lugar de recalcularlos
+                    blockInstance.hash = block.hash;
+                    blockInstance.nonce = block.nonce;
+                    blockInstance.validator = block.validator;
+
+                    return blockInstance;
+                });
+            }
+        } catch (error) {
+            console.error('Error initializing chain:', error);
+            throw error;
+        }
+    }
+
+    private async saveBlockToPrisma(block: Block): Promise<void> {
+        const { transactions, ...blockData } = block;
+
+        await this.prisma.block.create({
+            data: {
+                index: blockData.index,
+                timestamp: new Date(blockData.timestamp),
+                previousHash: blockData.previousHash,
+                hash: blockData.hash,
+                nonce: blockData.nonce,
+                signature: blockData.signature,
+                validator: 'system',
+                accountId: 'system',
+                transactions: {
+                    create: transactions.map(tx => ({
+                        processId: tx.processId,
+                        description: tx.description,
+                        data: tx.data,
+                        timestamp: new Date(tx.timestamp), // Convert string to Date for Prisma
+                        signature: tx.signature,
+                        accountId: 'system'
+                    }))
+                }
+            }
+        });
+    }
+
+    private async createAndSaveGenesisBlock(): Promise<Block> {
+        const genesisBlock = new Block(0, new Date().toISOString(), [], '0', '');
+        genesisBlock.hash = genesisBlock.calculateHash();
+        genesisBlock.validator = 'system';
+
+        await this.prisma.block.create({
+            data: {
+                id: crypto.randomUUID(),
+                index: genesisBlock.index,
+                timestamp: new Date(genesisBlock.timestamp),
+                previousHash: genesisBlock.previousHash,
+                hash: genesisBlock.hash,
+                nonce: genesisBlock.nonce,
+                signature: genesisBlock.signature,
+                validator: genesisBlock.validator,
+                accountId: 'system'
+            }
+        });
+
+        return genesisBlock;
     }
 
     /**
@@ -97,13 +192,14 @@ export class ChainService implements IBlockchain {
 
             // Validate the new block before adding it to the chain.
             if (this.consensusService.validateBlock(newBlock)) {
-                this.chain.push(newBlock);  // Add the validated block to the chain.
+                await this.saveBlockToPrisma(newBlock)
+                this.chain.push(newBlock)
 
-                // Aplicar recompensas si es necesario
-                if (blockData.amount && blockData.from && blockData.to) {
-                    const tokenId = await this.getTokenIdByPublicKey(publicKeyString);
-                    await this.applyAutoScalableRewards(blockData.from, blockData.to, blockData.amount, tokenId);
-                }
+                // // Aplicar recompensas si es necesario
+                // if (blockData.amount && blockData.from && blockData.to) {
+                //     const tokenId = await this.getTokenIdByPublicKey(publicKeyString);
+                //     await this.applyAutoScalableRewards(blockData.from, blockData.to, blockData.amount, tokenId);
+                // }
 
                 return { success: true, data: newBlock };  // Return the newly created block.
             } else {
@@ -133,7 +229,7 @@ export class ChainService implements IBlockchain {
             data: encryptedData,
             description: 'Private Block Creation',
             timestamp: new Date().toISOString(),
-            signature: user.data.signData(JSON.stringify(blockData)),
+            signature: user.data.user.signData(JSON.stringify(blockData)),
         };
 
         const newBlock = new Block(
@@ -147,14 +243,13 @@ export class ChainService implements IBlockchain {
         this.consensusService.mineBlock(newBlock);
 
         if (this.consensusService.validateBlock(newBlock)) {
+            await this.saveBlockToPrisma(newBlock)
             this.chain.push(newBlock);
             return newBlock;
         }
 
         throw new Error('Invalid block');
     }
-
-
 
     /**
      * Minar un bloque con recompensas en la criptomoneda seleccionada.
@@ -163,7 +258,7 @@ export class ChainService implements IBlockchain {
      * @param currency - Criptomoneda a utilizar para las recompensas (por defecto: "tripcoin").
      * @returns El bloque minado o un mensaje de error.
      */
-    public async mineBlockWithRewards(
+    public async createBlockWithRewards(
         blockData: FinancialTransactionBlockData,
         publicKeyString: string,
         currency: string = 'tripcoin'  // Criptomoneda por defecto.
@@ -175,12 +270,12 @@ export class ChainService implements IBlockchain {
             if (!user) throw new Error('Cuenta no encontrada');  // Validar que la cuenta exista.
 
             // Verificar si el plan de recompensas está activado.
-            if (!user.data.hasRewardPlanEnabled()) {
+            if (!user.data.user.hasRewardPlanEnabled()) {
                 throw new Error('El plan de recompensas no está activado para esta cuenta');
             }
 
             // Verificar si la criptomoneda seleccionada es válida.
-            if (!user.data.getBalance(currency) && currency !== 'tripcoin') {
+            if (!user.data.user.getBalance(currency) && currency !== 'tripcoin') {
                 throw new Error(`La criptomoneda ${currency} no está disponible en la cuenta`);
             }
 
@@ -200,7 +295,7 @@ export class ChainService implements IBlockchain {
                 data: CryptoUtils.encryptData(blockData, publicKey),  // Datos cifrados.
                 description: `Compra con recompensas en ${currency}`,  // Descripción.
                 timestamp: new Date().toISOString(),  // Fecha y hora.
-                signature: user.data.signData(JSON.stringify(blockData)),  // Firma del negocio.
+                signature: user.data.user.signData(JSON.stringify(blockData)),  // Firma del negocio.
             };
 
             // Crear el nuevo bloque.
@@ -217,6 +312,7 @@ export class ChainService implements IBlockchain {
 
             // Validar el bloque minado.
             if (this.consensusService.validateBlock(newBlock)) {
+                await this.saveBlockToPrisma(newBlock)
                 this.chain.push(newBlock);  // Agregar el bloque a la cadena.
 
                 // Obtener el tokenId asociado a la clave pública del negocio.
@@ -228,18 +324,18 @@ export class ChainService implements IBlockchain {
                 // Recompensar al cliente.
                 const clientAccount = await this.accountService.getAccount(blockData.to);
                 if (clientAccount) {
-                    clientAccount.data.updateBalance(currency, clientReward);
+                    clientAccount.data.user.updateBalance(currency, clientReward);
                 }
 
                 // Recompensar al negocio.
-                user.data.updateBalance(currency, ownerReward);
+                user.data.user.updateBalance(currency, ownerReward);
 
-                // Recompensar a la plataforma.
-                const platformAccount = await this.accountService.getAccount('platform');
-                if (platformAccount) {
-                    const platformReward = ownerReward * 0.1; // 10% of ownerReward
-                    platformAccount.data.updateBalance(currency, platformReward);
-                }
+                // // Recompensar a la plataforma.
+                // const platformAccount = await this.accountService.getAccount('platform');
+                // if (platformAccount) {
+                //     const platformReward = ownerReward * 0.1; // 10% of ownerReward
+                //     platformAccount.data.user.updateBalance(currency, platformReward);
+                // }
 
                 return newBlock;  // Devolver el bloque minado.
             } else {
@@ -332,13 +428,17 @@ export class ChainService implements IBlockchain {
      * @param accountHash The account hash of the sender, used for validation.
      * @returns A success message or an error if the synchronization fails.
      */
-    public synchronizeChain(receivedChain: Block[], accountHash: string) {
+    public async synchronizeChain(receivedChain: Block[], accountHash: string) {
         try {
             // Check if the received chain is longer than the local chain.
             if (receivedChain.length > this.chain.length) {
                 // If the chains are not aligned, validate the received chain.
                 const isValid = this.consensusService.validateChain(receivedChain);
                 if (isValid) {
+                    await this.prisma.block.deleteMany();
+
+                    for (const block of receivedChain) await this.saveBlockToPrisma(block);
+
                     // Replace the local chain with the received chain.
                     this.chain = receivedChain;
                     return { success: true, message: 'Blockchain synchronized successfully' };
@@ -382,8 +482,8 @@ export class ChainService implements IBlockchain {
 
             // Aplicar las recompensas en la criptomoneda asociada al token
             const currency = this.smartcontract.getTokenCurrentValue(tokenId); // Obtener la criptomoneda del token
-            clientAccount.data.updateBalance(currency, clientReward); // Recompensa al cliente
-            ownerAccount.data.updateBalance(currency, ownerReward); // Recompensa al dueño del negocio
+            clientAccount.data.user.updateBalance(currency, clientReward); // Recompensa al cliente
+            ownerAccount.data.user.updateBalance(currency, ownerReward); // Recompensa al dueño del negocio
             //   platformAccount.updateBalance(currency, platformReward); // Recompensa a la plataforma
 
             // Crear transacciones de recompensas
@@ -419,11 +519,13 @@ export class ChainService implements IBlockchain {
      * @param publicKeyString - The public key of the business
      * @returns The associated tokenId
      */
-    private async getTokenIdByPublicKey(publicKeyString: string): Promise<string> {
-        const user = await this.accountService.getAccount(publicKeyString)
-        if (!user) {
-            throw new Error('User not found');
-        }
-        return user.data.getTokenIdByBusinessPublicKey(publicKeyString);
+    public async getTokenIdByPublicKey(publicKeyString: string): Promise<string> {
+        const account = await this.prisma.account.findFirst({
+            where: { publicKey: publicKeyString },
+            include: { Token: true },
+        })
+
+        if (!account || account.Token.length === 0) throw new Error('No token found for this public key');
+        return account.Token[0].tokenId;
     }
 }

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { AccountService } from 'src/account/account.service';
 import { ChainService } from 'src/chain/chain.service';
 import { ConversionService } from 'src/conversion/conversion.service';
@@ -9,7 +9,9 @@ export class GasService {
   private conversionRates: Record<string, number> = {};
 
   constructor(
+    @Inject(forwardRef(() => AccountService))
     private readonly accountService: AccountService,
+    @Inject(forwardRef(() => ChainService))
     private readonly chainService: ChainService,
     private readonly conversionService: ConversionService,
   ) {
@@ -56,13 +58,13 @@ export class GasService {
     }
 
     // Verificar si el usuario tiene suficiente saldo en la criptomoneda especificada
-    const userBalance = user.data.getBalance(currency);
+    const userBalance = user.data.user.getBalance(currency);
     if (userBalance < gasCostInCrypto) {
       throw new Error('Saldo insuficiente para cubrir el gas');
     }
 
     // Cobrar el gas al usuario
-    user.data.updateBalance(currency, -gasCostInCrypto);
+    user.data.user.updateBalance(currency, -gasCostInCrypto);
 
     // Registrar la transacción de gas en la cadena
     this.chainService.createBlock([
@@ -73,7 +75,7 @@ export class GasService {
         currency,
         description: `Cobro de gas por transacción en ${currency}`,
       },
-      user.data.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+      user.data.user.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
     ]);
 
     return true;

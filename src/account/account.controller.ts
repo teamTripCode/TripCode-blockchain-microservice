@@ -7,20 +7,17 @@ import { CreateAccountDto } from './dto/create-account.dto';
 export class AccountController {
   constructor(private readonly accountService: AccountService) { }
 
-  // @MessagePattern({ cmd: 'getAllAccounts' })
   @Get()
   GetAllAccounts() {
     return this.accountService.getAllAccounts();
   }
 
-  // @MessagePattern({ cmd: 'createAccount' })
   @Post()
   CreateAccount(@Payload() payload: CreateAccountDto) {
     return this.accountService.createAccount(payload)
   }
 
 
-  // @MessagePattern({ cmd: 'blocksByAccount' })
   @Get(':hash')
   BlocksByAccount(@Param('hash') hash: string ) {
     return this.accountService.blocksByAccount(hash);

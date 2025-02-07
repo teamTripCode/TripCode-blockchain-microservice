@@ -51,57 +51,6 @@ export interface RewardBlock extends BodyBlock<RewardBlockData> {
     params: ParamProp<RewardBlockData>; // Usar RewardBlockData específicamente
 }
 
-export interface AuditLogBlockData {
-    eventType: string; // Tipo de evento (acceso, modificación, etc.)
-    userId: string; // Clave pública del usuario que realizó la acción
-    details: NestedObject; // Detalles del evento
-    timestamp: string; // Fecha y hora del evento
-}
-
-export interface AuditLogBlock extends BodyBlock<AuditLogBlockData> {
-    method: 'createAuditLogBlock';
-    params: ParamProp<AuditLogBlockData>; // Usar AuditLogBlockData específicamente
-}
-
-export interface ExchangeBlockData {
-    fromCurrency: string; // Moneda de origen (Tripcoin, USD, etc.)
-    toCurrency: string; // Moneda de destino (BTC, ETH, etc.)
-    amount: number; // Cantidad a intercambiar
-    exchangeRate: number; // Tasa de cambio
-    userId: string; // Clave pública del usuario que realiza el intercambio
-    timestamp: string; // Fecha y hora del intercambio
-}
-
-export interface ExchangeBlock extends BodyBlock<ExchangeBlockData> {
-    method: 'createExchangeBlock';
-    params: ParamProp<ExchangeBlockData>; // Usar ExchangeBlockData específicamente
-}
-
-export interface UserRegistrationBlockData {
-    userId: string; // Clave pública del usuario
-    userType: 'client' | 'business'; // Tipo de usuario
-    registrationDate: string; // Fecha de registro
-    metadata: NestedObject; // Metadatos adicionales (nombre, dirección, etc.)
-}
-
-export interface UserRegistrationBlock extends BodyBlock<UserRegistrationBlockData> {
-    method: 'createUserRegistrationBlock';
-    params: ParamProp<UserRegistrationBlockData>; // Usar UserRegistrationBlockData específicamente
-}
-
-export interface GovernanceBlockData {
-    proposalId: string; // Identificador único de la propuesta
-    voters: string[]; // Claves públicas de los votantes
-    votes: { [key: string]: 'yes' | 'no' }; // Votos de los participantes
-    result: 'approved' | 'rejected'; // Resultado de la votación
-    timestamp: string; // Fecha y hora de la votación
-}
-
-export interface GovernanceBlock extends BodyBlock<GovernanceBlockData> {
-    method: 'createGovernanceBlock';
-    params: ParamProp<GovernanceBlockData>; // Usar GovernanceBlockData específicamente
-}
-
 export interface FinancialTransactionBlockData {
     transactionType: 'crypto' | 'payment' | 'invoice'; // Tipo de transacción
     from: string; // Clave pública del remitente (o identificador del emisor)
@@ -116,18 +65,6 @@ export interface FinancialTransactionBlockData {
 export interface FinancialTransactionBlock extends BodyBlock<FinancialTransactionBlockData> {
     method: 'createFinancialTransactionBlock';
     params: ParamProp<FinancialTransactionBlockData>; // Usar FinancialTransactionBlockData específicamente
-}
-
-export interface CriticalDataBlockData {
-    companyId: string; // Identificador único de la empresa
-    dataType: string; // Tipo de dato crítico (inventario, empleados, etc.)
-    data: NestedObject; // Datos críticos
-    timestamp: string; // Fecha y hora del registro
-}
-
-export interface CriticalDataBlock extends BodyBlock<CriticalDataBlockData> {
-    method: 'createCriticalDataBlock';
-    params: ParamProp<CriticalDataBlockData>; // Usar CriticalDataBlockData específicamente
 }
 
 export interface IBlock {
@@ -165,7 +102,7 @@ export interface IBlockchain {
     pendingTransactions: ITransaction[];  // Procesos pendientes para ser minados.
     difficulty: number;  // Dificultad para la minería.
 
-    createGenesisBlock(): IBlock;  // Crea el bloque génesis.
+    // createGenesisBlock(): IBlock;  // Crea el bloque génesis.
     getLatestBlock(): IBlock;  // Obtiene el último bloque de la cadena.
 
     isChainValid(): boolean;  // Verifica si la cadena es válida.

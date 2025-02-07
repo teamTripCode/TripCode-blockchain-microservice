@@ -4,12 +4,14 @@ import { ChainController } from './chain.controller';
 import { AccountModule } from 'src/account/account.module';
 import { ConsensusModule } from 'src/consensus/consensus.module';
 import { SmartContractsModule } from 'src/smart-contracts/smart-contracts.module';
+import { PrismaModule } from 'src/prisma/prisma.module';
 
 @Module({
   imports: [
     forwardRef(() => AccountModule),
     ConsensusModule,
-    forwardRef(() => SmartContractsModule)
+    forwardRef(() => SmartContractsModule),
+    PrismaModule
   ],
   controllers: [ChainController],
   providers: [ChainService],

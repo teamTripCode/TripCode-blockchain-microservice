@@ -3,12 +3,14 @@ import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
 import { AccountService } from 'src/account/account.service';
 import { responseProp } from './dto/create-auth.dto';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly jwtService: JwtService,
     private readonly accountService: AccountService,
+    private readonly prisma: PrismaService,
   ) { }
 
   /**
@@ -24,12 +26,16 @@ export class AuthService {
         return { success: false, error: 'Usuario no encontrado' };
       }
 
+      // if (!user.data.user.hasRewardPlanEnabled()) {
+      //   return { success: false, error: 'El plan de recompensas no está activado para esta cuenta' };
+      // }
+
       // Generar la firma automáticamente en el servidor
       const messageToSign = 'login-request';
-      const signature = user.data.signData(messageToSign);
+      const signature = user.data.user.signData(messageToSign);
 
       // Verificar la firma generada
-      const isValid = user.data.verifyData(messageToSign, signature);
+      const isValid = user.data.user.verifyData(messageToSign, signature);
       if (!isValid) {
         return { success: false, error: 'Firma no válida' };
       }
@@ -54,29 +60,49 @@ export class AuthService {
    * @param publicKey - Clave pública del usuario.
    * @returns Un objeto con la estructura { success: boolean, data?: any, error?: string }.
    */
-  async generateApiKey(publicKey: crypto.KeyObject, description?: string, expiresAt?: Date, permissions?: string[]): Promise<responseProp> {
+  async generateApiKey(
+    publicKey: string,
+    description?: string,
+    expiresAt?: Date,
+    permissions?: string[],
+  ): Promise<responseProp> {
     try {
-      // Convertir la clave pública a formato PEM
-      const publicKeyPem = publicKey.export({
+      // Convertir la clave pública en formato PEM a un objeto KeyObject
+      const keyObject = crypto.createPublicKey(publicKey);
+
+      // Exportar la clave pública en formato PEM
+      const publicKeyPem = keyObject.export({
         type: 'spki',
         format: 'pem',
       }).toString();
 
-      console.log('Clave pública en formato PEM:', publicKeyPem); // Depuración
+      console.log('Clave pública recibida:', publicKey);
+      console.log('Clave pública convertida a KeyObject:', keyObject);
 
+      // Obtener la cuenta asociada a la clave pública
       const user = await this.accountService.getAccount(publicKeyPem);
       if (!user) {
         console.error('Usuario no encontrado para la publicKeyPem:', publicKeyPem); // Depuración
         return { success: false, error: 'Usuario no encontrado' };
       }
 
+      // Generar una API Key aleatoria
       const apiKey = crypto.randomBytes(32).toString('hex');
-      user.data.addApiKey(apiKey, description, expiresAt, permissions);
+      const { accountId } = user.data
+
+      await this.prisma.apiKey.create({
+        data: {
+          key: apiKey,
+          description,
+          expiresAt,
+          permissions: permissions || [],
+          accountId,
+        }
+      })
 
       // Devolver la API Key en la respuesta
       return { success: true, data: apiKey };
     } catch (error) {
-      // Manejar errores inesperados
       if (error instanceof Error) {
         return { success: false, error: error.message };
       }
@@ -123,7 +149,7 @@ export class AuthService {
         return { success: false, error: 'Usuario no encontrado' };
       }
 
-      user.data.removeApiKey(apiKey); // Eliminar la API Key del usuario
+      user.data.user.removeApiKey(apiKey); // Eliminar la API Key del usuario
       return { success: true, data: 'API Key eliminada correctamente' };
     } catch (error) {
       // Manejar errores inesperados
@@ -147,7 +173,7 @@ export class AuthService {
         return { success: false, error: 'Usuario no encontrado' };
       }
 
-      user.data.deactivateApiKey(apiKey); // Desactivar la API Key del usuario
+      user.data.user.deactivateApiKey(apiKey); // Desactivar la API Key del usuario
       return { success: true, data: 'API Key desactivada correctamente' };
     } catch (error) {
       // Manejar errores inesperados

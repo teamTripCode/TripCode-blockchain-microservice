@@ -9,6 +9,7 @@ export class SmartContract {
     actions: ContractAction[]; // Acciones a ejecutar cuando se cumplen las condiciones
     metadata: Record<string, any>; // Datos adicionales del contrato
     isClosed: boolean; // Indica si el contrato está cerrado
+    tokenId: string;
 
     constructor(
         creator: string,
