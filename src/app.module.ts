@@ -11,6 +11,7 @@ import { ConversionModule } from './conversion/conversion.module';
 import { ConfigModule } from '@nestjs/config';
 import { KycModule } from './kyc/kyc.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { ChainGatewayModule } from './gateway/gateway.module';
 
 @Module({
   imports: [
@@ -23,7 +24,8 @@ import { PrismaModule } from './prisma/prisma.module';
     GasModule,
     ConversionModule,
     KycModule,
-    PrismaModule
+    PrismaModule,
+    ChainGatewayModule
   ],
   controllers: [AppController],
   providers: [AppService],

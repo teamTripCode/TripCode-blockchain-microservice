@@ -4,7 +4,6 @@ import { CreateAccountDto } from './dto/create-account.dto';
 import { CryptoUtils } from 'handlersChain/CryptoUtils';
 import { PrismaService } from 'src/prisma/prisma.service';
 import * as crypto from 'crypto'
-import { SmartContractsService } from 'src/smart-contracts/smart-contracts.service';
 
 @Injectable()
 export class AccountService {
@@ -12,8 +11,8 @@ export class AccountService {
 
   constructor(
     private prisma: PrismaService,
-    @Inject(forwardRef(() => SmartContractsService))
-    private smartContract: SmartContractsService,
+    // @Inject(forwardRef(() => SmartContractsService))
+    // private smartContract: SmartContractsService,
   ) { }
 
   /**
@@ -191,6 +190,7 @@ export class AccountService {
       user.privateKey = crypto.createPrivateKey(account.privateKey);
       user.publicKey = crypto.createPublicKey(account.publicKey);
       user.rewardPlanEnabled = account.rewardPlanEnabled;
+      user.isBusinessAccount = account.isBusinessAccount;
 
       // Asignar los balances
       const tripcoinBalance = account.balances.find(balance => balance.currency === 'tripcoin');
@@ -265,50 +265,6 @@ export class AccountService {
     } catch (error) {
       console.error('Error getting balance:', error);
       throw error;
-    }
-  }
-
-
-  async calculateAutoScalableRewards(
-    amount: number,
-    tokenId: string,
-  ): Promise<{ clientReward: number; ownerReward: number }> {
-    try {
-      // Obtener el precio actual de la criptomoneda desde el contrato inteligente
-      const coinPriceInCOP = this.smartContract.getTokenCurrentValue(tokenId);
-
-      // Convertir el precio de COP a USD (suponiendo una tasa de cambio fija, por ejemplo, 1 USD = 4000 COP)
-      const exchangeRate = 4000; // Tasa de cambio COP a USD (ajustable según necesidades)
-      const coinPriceInUSD = coinPriceInCOP / exchangeRate;
-
-      // Definir tasas base
-      const baseClientRate = 0.01; // 1% base para el cliente
-      const baseOwnerRate = 0.005; // 0.5% base para el dueño del negocio
-
-      // Función para calcular la tasa escalada
-      const calculateScaledRate = (
-        baseRate: number,
-        amount: number,
-        coinPrice: number,
-      ): number => {
-        // Ajustar la tasa según el valor de la moneda y el monto de la compra
-        // Entre más alto el valor de la moneda, menor será la tasa
-        // Entre más alto el monto de la compra, mayor será la tasa
-        return baseRate * (Math.log1p(amount) / Math.log1p(coinPrice));
-      };
-
-      // Calcular las tasas escaladas
-      const clientRate = calculateScaledRate(baseClientRate, amount, coinPriceInUSD);
-      const ownerRate = calculateScaledRate(baseOwnerRate, amount, coinPriceInUSD);
-
-      // Calcular las recompensas en criptomonedas
-      const clientReward = (amount * clientRate) / coinPriceInUSD;
-      const ownerReward = (amount * ownerRate) / coinPriceInUSD;
-
-      return { clientReward, ownerReward };
-    } catch (error) {
-      console.error('Error calculating rewards:', error);
-      throw new Error('No se pudo calcular las recompensas');
     }
   }
 

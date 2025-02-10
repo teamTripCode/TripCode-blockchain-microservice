@@ -1,110 +1,105 @@
-import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { AccountService } from 'src/account/account.service';
-import { ChainService } from 'src/chain/chain.service';
-import { ConversionService } from 'src/conversion/conversion.service';
+import { forwardRef, Inject, Injectable } from "@nestjs/common";
+import { AccountService } from "src/account/account.service";
+import { PrismaService } from "src/prisma/prisma.service";
 
 @Injectable()
 export class GasService {
-  private gasPriceInUSD: number = 0.01; // Precio base del gas en USD (ajustable)
-  private conversionRates: Record<string, number> = {};
+  private readonly GAS_COSTS = {
+    TRANSFER: 21000,
+    TOKEN_TRANSFER: 65000,
+    CONTRACT_DEPLOYMENT: 200000,
+    STORAGE_WRITE: 20000,
+    STORAGE_READ: 5000,
+    BLOCK_WITH_REWARDS_CREATION: 3000,
+    PRIVATE_BLOCK_CREATION: 3000,
+  };
+
+  private baseGasPrice: number = 0.000001;
 
   constructor(
     @Inject(forwardRef(() => AccountService))
     private readonly accountService: AccountService,
-    @Inject(forwardRef(() => ChainService))
-    private readonly chainService: ChainService,
-    private readonly conversionService: ConversionService,
+    private readonly prisma: PrismaService,
+  ) { }
+
+  calculateGasCost(
+    operationType: keyof typeof this.GAS_COSTS,
+    gasLimit: number,
+    gasPriorityFee: number = 0
   ) {
-    this.updateConversionRates();
+    const gasUnits = this.GAS_COSTS[operationType];
+    const totalGasPrice = this.baseGasPrice + gasPriorityFee;
+
+    return {
+      gasUnits,
+      baseGasCost: gasUnits * this.baseGasPrice,
+      priorityFee: gasUnits * gasPriorityFee,
+      total: gasUnits * totalGasPrice,
+      maxCost: gasLimit * totalGasPrice,
+    };
   }
 
-  /**
-   * Calcula el costo del gas para una transacción en USD.
-   * @param complexity - Complejidad de la transacción (número de operaciones).
-   * @returns El costo del gas en USD.
-   */
-  calculateGasCostInUSD(complexity: number): number {
-    return this.gasPriceInUSD * complexity;
-  }
+  async executeTransaction(
+    accountHash: string,
+    operationType: keyof typeof this.GAS_COSTS,
+    gasLimit: number,
+    gasPriorityFee: number = 0,
+    transactionCallback: () => Promise<any>
+  ) {
+    const gasCost = this.calculateGasCost(operationType, gasLimit, gasPriorityFee);
 
-  /**
-   * Convierte el costo del gas de USD a otra criptomoneda.
-   * @param amountInUSD - Cantidad en USD.
-   * @param currency - Criptomoneda a la que se desea convertir (por ejemplo, "tripcoin").
-   * @returns El costo del gas en la criptomoneda especificada.
-   */
-  convertGasCostToCrypto(amountInUSD: number, currency: string): number {
-    const rate = this.conversionRates[currency.toLowerCase()];
-    if (!rate) {
-      throw new Error(`Tasa de conversión no disponible para ${currency}`);
-    }
-    return amountInUSD / rate;
-  }
-
-  /**
-   * Cobra el gas a un usuario por una transacción.
-   * @param publicKey - Clave pública del usuario.
-   * @param complexity - Complejidad de la transacción.
-   * @param currency - Criptomoneda en la que se cobrará el gas (por defecto, "tripcoin").
-   * @returns Verdadero si el cobro fue exitoso.
-   */
-  async chargeGas(publicKey: string, complexity: number, currency: string = 'tripcoin'): Promise<boolean> {
-    const gasCostInUSD = this.calculateGasCostInUSD(complexity);
-    const gasCostInCrypto = this.convertGasCostToCrypto(gasCostInUSD, currency);
-
-    const user = await this.accountService.getAccount(publicKey);
-    if (!user) {
-      throw new Error('Usuario no encontrado');
+    const balance = await this.accountService.getBalance(accountHash, 'tripcoin');
+    if (balance < gasCost.maxCost) {
+      throw new Error('Insufficient TripCoin balance for gas');
     }
 
-    // Verificar si el usuario tiene suficiente saldo en la criptomoneda especificada
-    const userBalance = user.data.user.getBalance(currency);
-    if (userBalance < gasCostInCrypto) {
-      throw new Error('Saldo insuficiente para cubrir el gas');
+    try {
+      await transactionCallback();
+      await this.accountService.updateBalance(accountHash, 'tripcoin', -gasCost.baseGasCost);
+
+      await this.prisma.gasUsage.create({
+        data: {
+          accountHash,
+          gasUnits: gasCost.gasUnits,
+          baseFee: gasCost.baseGasCost,
+          priorityFee: gasCost.priorityFee,
+        }
+      });
+
+      return true;
+    } catch (error) {
+      const gasUsed = Math.min(gasCost.gasUnits, gasLimit);
+      const actualCost = gasUsed * (this.baseGasPrice + gasPriorityFee);
+
+      await this.accountService.updateBalance(accountHash, 'tripcoin', -actualCost);
+      throw error;
     }
-
-    // Cobrar el gas al usuario
-    user.data.user.updateBalance(currency, -gasCostInCrypto);
-
-    // Registrar la transacción de gas en la cadena
-    this.chainService.createBlock([
-      {
-        from: publicKey,
-        to: 'gas-fee-collector', // Dirección del recolector de gas
-        amount: gasCostInCrypto,
-        currency,
-        description: `Cobro de gas por transacción en ${currency}`,
-      },
-      user.data.user.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
-    ]);
-
-    return true;
   }
 
-  /**
-   * Obtiene el precio actual del gas en USD.
-   * @returns El precio del gas en USD.
-   */
-  getGasPriceInUSD(): number {
-    return this.gasPriceInUSD;
-  }
+  async adjustBaseGasPrice() {
+    const recentBlocks = await this.prisma.block.findMany({
+      take: 10,
+      orderBy: { timestamp: 'desc' },
+      include: { transactions: true }
+    });
 
-  /**
-   * Actualiza el precio del gas en USD.
-   * @param newPrice - Nuevo precio del gas en USD.
-   */
-  updateGasPriceInUSD(newPrice: number): void {
-    if (newPrice <= 0) {
-      throw new Error('El precio del gas debe ser mayor que 0');
+    const targetGasPerBlock = 15000000;
+    const averageGasUsed = recentBlocks.reduce((sum, block) =>
+      sum + block.transactions.length * this.GAS_COSTS.TRANSFER, 0
+    ) / recentBlocks.length;
+
+    if (averageGasUsed > targetGasPerBlock) {
+      this.baseGasPrice *= 1.125;
+    } else {
+      this.baseGasPrice *= 0.875;
     }
-    this.gasPriceInUSD = newPrice;
   }
 
-  /**
-   * Actualiza las tasas de conversión de criptomonedas a USD.
-   */
-  async updateConversionRates(): Promise<void> {
-    const cryptos = ['tripcoin', 'bitcoin', 'ethereum']; // Criptomonedas soportadas
-    this.conversionRates = await this.conversionService.getMultipleCryptoPricesInUSD(cryptos);
+  getGasPrice() {
+    return {
+      baseGasPrice: this.baseGasPrice,
+      suggestedPriorityFee: this.baseGasPrice * 0.1,
+      estimatedTotalGasPrice: this.baseGasPrice * 1.1
+    };
   }
 }

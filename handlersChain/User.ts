@@ -15,6 +15,7 @@ export class User implements IUser {
     public balances: Record<string, number>;
     public apiKeys: ApiKey[];
     public rewardPlanEnabled: boolean;
+    public isBusinessAccount: boolean;
     public gasBalance: number;
     public smartContracts: {
         contractId: string;
@@ -35,11 +36,11 @@ export class User implements IUser {
 
             this.prisma = prisma;
 
-            console.log('Creating account hash...');
+            // console.log('Creating account hash...');
             this.accountHash = crypto.createHash('sha256')
                 .update(name + email + Date.now().toString())
                 .digest('hex');
-            console.log('Account hash generated:', this.accountHash);
+            // console.log('Account hash generated:', this.accountHash);
 
             this.balances = { tripcoin: 0 }; // Inicializar con Tripcoins
             this.gasBalance = 0; // Inicio de el saldo de gas en 0
@@ -49,7 +50,7 @@ export class User implements IUser {
             this.name = name;
             this.email = email;
 
-            console.log('Generating ECDSA keypair...');
+            // console.log('Generating ECDSA keypair...');
 
             const keyPair = crypto.generateKeyPairSync('ec', {
                 namedCurve: 'secp256k1',
@@ -63,10 +64,10 @@ export class User implements IUser {
                 }
             });
 
-            console.log('Setting private key...');
+            // console.log('Setting private key...');
             this.privateKey = crypto.createPrivateKey(keyPair.privateKey);
 
-            console.log('Setting public key...');
+            // console.log('Setting public key...');
             this.publicKey = crypto.createPublicKey(keyPair.publicKey);
         } catch (error) {
             if (error instanceof Error) {

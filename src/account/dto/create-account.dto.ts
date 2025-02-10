@@ -15,6 +15,7 @@ export interface IUser {
     balances: Record<string, number>; // Saldos de criptomonedas
     apiKeys: ApiKey[];             // Claves API del usuario
     rewardPlanEnabled: boolean;    // Estado del plan de recompensas
+    isBusinessAccount: boolean;
     smartContracts: Array<{        // Contratos inteligentes asociados al usuario
         contractId: string;        // ID del contrato inteligente
         businessPublicKey: string; // Clave pública del negocio asociado

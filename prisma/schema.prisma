@@ -16,6 +16,7 @@ model Account {
     privateKey        String
     balances          Balance[]
     rewardPlanEnabled Boolean         @default(false)
+    isBusinessAccount Boolean         @default(false)
     gasBalance        Float           @default(0)
     createdAt         DateTime        @default(now())
     updatedAt         DateTime        @updatedAt
@@ -74,6 +75,15 @@ model Block {
     accountId    String
     createdAt    DateTime      @default(now())
     updatedAt    DateTime      @updatedAt
+}
+
+model gasUsage {
+    id          String   @id @default(uuid()) @map("_id")
+    accountHash String
+    gasUnits    Int
+    baseFee     Int
+    priorityFee Int
+    createdAt   DateTime @default(now())
 }
 
 model SmartContract {

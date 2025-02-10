@@ -40,15 +40,20 @@ export class ChainController {
     }
 
     @Post()
-    createBlock(@Body() payload: BodyBlock<any>) {
+    createBlock(
+        @Body() payload: {
+            block: BodyBlock<any>,
+            currency?: string
+        }
+    ) {
         try {
-            switch (payload.method) {
+            switch (payload.block.method) {
                 case 'createBlock':
-                    return this.chainService.createBlock(payload.params)
+                    return this.chainService.createBlock(payload.block.params)
                 case 'createSmartContractBlock':
-                    return this.chainService.createBlock(payload.params as [SmartContractBlockData, string]);
+                    return this.chainService.createBlock(payload.block.params as [SmartContractBlockData, string]);
                 case 'createRewardBlock':
-                    const [blockData, publicKeyString] = payload.params as [RewardBlockData, string];
+                    const [blockData, publicKeyString] = payload.block.params as [RewardBlockData, string];
 
                     const financialTransactionBlockData: FinancialTransactionBlockData = {
                         transactionType: 'payment',
@@ -58,7 +63,7 @@ export class ChainController {
                         description: blockData.description,
                     }
 
-                    return this.chainService.createBlockWithRewards(financialTransactionBlockData, publicKeyString);
+                    return this.chainService.createBlockWithRewards(financialTransactionBlockData, publicKeyString, payload.currency);
                 default:
                     throw new Error('Unsupported method');
             }
@@ -114,11 +119,11 @@ export class ChainController {
         return this.chainService.synchronizeChain(payload.receivedChain, payload.accountHash);
     }
 
-    @Post('apply-rewards')
-    async applyRewardsManually(@Body() payload: { from: string, to: string; amount: number, tokenId: string }) {
-        const { from, to, amount, tokenId } = payload;
-        return this.chainService.applyAutoScalableRewards(from, to, amount, tokenId);
-    }
+    // @Post('apply-rewards')
+    // async applyRewardsManually(@Body() payload: { from: string, to: string; amount: number, tokenId: string }) {
+    //     const { from, to, amount, tokenId } = payload;
+    //     return this.chainService.applyAutoScalableRewards(from, to, amount, tokenId);
+    // }
 
     @Post('token_id')
     async getTokenIdByPublicKey(

@@ -9,7 +9,7 @@ import { GasModule } from 'src/gas/gas.module';
   imports: [
     forwardRef(() => AccountModule),
     forwardRef(() => ChainModule),
-    forwardRef(() => GasModule),
+    GasModule,
   ],
   controllers: [SmartContractController],
   providers: [SmartContractsService],

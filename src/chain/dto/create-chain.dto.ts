@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 
 export interface NestedObject {
-    [key: string]: string | number | boolean | null | NestedObject | NestedObject[];
+    [key: string]: string | number | boolean | null | NestedObject | NestedObject[] | BlockData;
 }
 
 // ParamProp ahora es genérico y puede aceptar cualquier tipo de datos
@@ -110,7 +110,7 @@ export interface IBlockchain {
     getDecryptedBlockData(blockIndex: number, publicKey: crypto.KeyObject): { success: boolean, data?: any, error?: string };  // Descifra los datos de un bloque específico.
     getAccountBlocks(publicKey: string): IBlock[];  // Obtiene los bloques asociados a una cuenta mediante su clave pública.
     getDecryptedData(publicKeyString: string, blockIndex: number): any[];  // Obtiene los datos desencriptados de un bloque específico.
-    createPrivateBlock(blockData: NestedObject, publicKeyString: string): Promise<IBlock>;  // Crea un bloque privado.
+    createPrivateBlock(blockData: NestedObject, publicKeyString: string): Promise<any>;  // Crea un bloque privado.
 }
 
 export function isBlockData(obj: any): obj is BlockData {

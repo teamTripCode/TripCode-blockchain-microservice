@@ -1,37 +1,33 @@
-import { ContractCondition, ContractAction } from '../entities/smart-contract.entity';
-
-export class CreateSmartContractDto {
-    creator: string; // Clave pública del creador del contrato
-    conditions: ContractCondition[]; // Condiciones que deben cumplirse
-    actions: ContractAction[]; // Acciones a ejecutar cuando se cumplen las condiciones
-    metadata?: Record<string, any>; // Datos adicionales del contrato (opcional)
+// dto/create-token.dto.ts
+export class CreateTokenDto {
+    name: string;             // Nombre del token
+    symbol: string;           // Símbolo del token (ej: BTC)
+    initialValue: number;     // Valor inicial en COP
+    creatorAddress: string;   // Dirección del creador
+    businessId: string;       // ID del negocio asociado
 }
 
-export class ContributeToContractDto {
-    contractId: string; // ID del contrato
-    participant: string; // Clave pública del participante
-    amount: number; // Cantidad de Tripcoins a contribuir
-    currency: string; // Nombre de la criptomoneda (por ejemplo, "tripcoin")
+// dto/create-contract.dto.ts
+export class CreateContractDto {
+    tokenId: string;          // ID del token asociado
+    creatorAddress: string;   // Dirección del creador
+    rewardPercentage: number; // Porcentaje de recompensa base
+    minPurchaseAmount?: number; // Monto mínimo para recompensas
 }
 
-export class AddConditionDto {
-    contractId: string; // ID del contrato
-    condition: ContractCondition; // Nueva condición a agregar
+// dto/trade-token.dto.ts
+export class TradeTokenDto {
+    tokenId: string;
+    amount: number;
+    traderAddress: string;
+    type: 'buy' | 'sell';
 }
 
-export class AddActionDto {
-    contractId: string; // ID del contrato
-    action: ContractAction; // Nueva acción a agregar
+// dto/reward-transaction.dto.ts
+export class RewardTransactionDto {
+    tokenId: string;
+    recipientAddress: string;
+    purchaseAmount: number;
+    rewardAmount: number;
+    timestamp: string;
 }
-
-export class GetContractDto {
-    contractId: string; // ID del contrato
-}
-
-export interface SmartContractTransaction {
-    from: string; // Clave pública del emisor (participante o creador del contrato)
-    to: string; // Clave pública del destinatario (contrato o beneficiario)
-    amount: number; // Cantidad de Tripcoins
-    description: string; // Descripción de la transacción
-    timestamp: string; // Fecha y hora de la transacción
-  }

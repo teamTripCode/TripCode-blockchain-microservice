@@ -1,59 +1,40 @@
-import { Controller, Post, Body, Get, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, UseGuards } from '@nestjs/common';
 import { SmartContractsService } from './smart-contracts.service';
-import { GetContractDto, AddActionDto, AddConditionDto, ContributeToContractDto, CreateSmartContractDto } from './dto/create-smart-contract.dto';
 import { JwtAuthGuard } from '../auth/auth.guard'; // Importa tu JwtAuthGuard
-import { User } from 'handlersChain/User';
+import { CreateContractDto, CreateTokenDto, TradeTokenDto } from './dto/create-smart-contract.dto';
 
 @Controller('smart-contract')
 @UseGuards(JwtAuthGuard)
 export class SmartContractController {
   constructor(private readonly smartContractService: SmartContractsService) { }
 
-  @Post('create')
-  async createContract(@Body() createSmartContractDto: CreateSmartContractDto, @Request() req: { user: User }): Promise<any> {
-    const creator: string = req.user.getAccountData().publicKey;
-
-    return this.smartContractService.createContract(
-      creator,
-      createSmartContractDto.conditions,
-      createSmartContractDto.actions,
-      createSmartContractDto.metadata,
-    );
+  @Post('token')
+  async createToken(@Body() dto: CreateTokenDto) {
+    return this.smartContractService.createToken(dto);
   }
 
-  @Post('contribute')
-  async contributeToContract(@Body() contributeToContractDto: ContributeToContractDto, @Request() req: { user: User }): Promise<any> {
-    const participant: string = req.user.getAccountData().publicKey; // Obtén el participante autenticado
-    return this.smartContractService.contributeToContract(
-      contributeToContractDto.contractId,
-      participant, // Usa el participante autenticado
-      contributeToContractDto.amount,
-      contributeToContractDto.currency,
-    );
+  @Post()
+  async createSmartContract(@Body() dto: CreateContractDto) {
+    return this.smartContractService.createSmartContract(dto);
   }
 
-  @Post('add-condition')
-  async addCondition(@Body() addConditionDto: AddConditionDto, @Request() req: { user: User }): Promise<any> {
-    const creator: string = req.user.getAccountData().publicKey;
-    return this.smartContractService.addCondition(
-      addConditionDto.contractId,
-      addConditionDto.condition,
-      creator,
-    );
+  @Post('trade')
+  async tradeToken(@Body() dto: TradeTokenDto) {
+    return this.smartContractService.tradeToken(dto);
   }
 
-  @Post('add-action')
-  async addAction(@Body() addActionDto: AddActionDto, @Request() req: { user: User }): Promise<any> {
-    const creator: string = req.user.getAccountData().publicKey;
-    return this.smartContractService.addAction(
-      addActionDto.contractId,
-      addActionDto.action,
-      creator,
-    );
+  @Get('token/:id')
+  async getToken(@Param('id') tokenId: string) {
+    return this.smartContractService.getToken(tokenId);
   }
 
-  @Get(':contractId')
-  async getContract(@Param() getContractDto: GetContractDto): Promise<any> {
-    return this.smartContractService.getContract(getContractDto.contractId);
+  @Get('contract/:id')
+  async getContract(@Param('id') contractId: string) {
+    return this.smartContractService.getContract(contractId);
+  }
+
+  @Get('tokens/business/:businessId')
+  async getTokensByBusiness(@Param('businessId') businessId: string) {
+    return this.smartContractService.getTokensByBusiness(businessId);
   }
 }
